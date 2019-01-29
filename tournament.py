@@ -2,8 +2,8 @@
 import pandas
 import math
 from datetime import datetime, timedelta
-from lib.team import Team
-from lib.helpers import clean_input, strtotime, positive
+from sched.team import Team
+from sched.helpers import clean_input, strtotime, positive
 
 class Tournament:
     def schedule(self):
