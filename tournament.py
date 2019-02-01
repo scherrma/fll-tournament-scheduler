@@ -3,18 +3,60 @@ import pandas
 import math
 from datetime import datetime, timedelta
 from sched.team import Team
-from sched.helpers import clean_input, strtotime, positive
+import sched.util #chunks
+from sched.util import clean_input, strtotime, positive
 
 class Tournament:
+    j_names = ['Project', 'Robot Design', 'Core Values']
+    t_names = ['Practice', 'Round']
+    
     def schedule(self):
         self.setup()
+        self.assign_judging()
+        self.assign_tables()
+
+        for team in self.teams:
+            activities = [(time, Tournament.j_names[cat] + ' ' + str(loc + 1))
+                    if cat >= 0 else (time, 'Table ' + Tournament.t_names[bool(-cat-1)])
+                          for (time, cat, loc) in team.events]
+            activities.sort()
+            print('\n' + str(team) + 
+                    ''.join(['\n\t' + loc + ' at ' + time.strftime('%I:%M%p') for (time, loc) in activities]))
+
+    def assign_judging(self):
+        self.j_slots = [sum([list(range((i + j) % 3, len(self.teams), 3))
+                            for i in range(3)], []) for j in range(3)]
+        self.j_slots = list(zip(*[sched.util.chunks(l[self.calib:], self.j_sets) 
+                                      for l in self.j_slots]))
+        if self.calib:
+            self.j_slots = [([0], [1], [2])] + self.j_slots
+
+        for timeslot in range(len(self.j_slots)):
+            time = self.j_start + timeslot*self.j_duration\
+                 + (timeslot + 2*self.calib) // self.j_cycle_len * self.j_break
+
+            for cat in range(3):
+                for i in range(len(self.j_slots[timeslot][cat])):
+                    self.teams[self.j_slots[timeslot][cat][i]].events.append((time, cat, i))
+
+    def assign_tables(self):
+        t_start = sorted(self.teams[0].events)[1][0] - self.cross_time - self.t_duration_early
+        t_early = [2 * int(3 * self.j_sets * i / 4) for i in
+                range(math.ceil(4 * len(self.teams) / (3 * self.j_sets)))] + [2*len(self.teams)]
+
+        for i in range(len(t_early) - 1):
+            print((t_start + i*self.t_duration_early).strftime('%r'), "teams:", 
+                    list(map(lambda x: x % len(self.teams), range(t_early[i], t_early[i+1]))))
+            for team in range(t_early[i], t_early[i + 1]):
+                self.teams[team % len(self.teams)].events.append((t_start + i*self.t_duration_early,
+                        -(t_early[i] + team) // len(self.teams) - 1, team))
 
     def setup(self):
         good_data = False
         try_again = 'y'
         while try_again == 'y' and not good_data:
             try:
-                self.ingest_sheet('/mnt/c/Users/Marty/Desktop/fll scheduler/example fll team list.xlsx')
+                self.ingest_sheet('/mnt/c/Users/Marty/Desktop/fll-tournament-scheduler/testdata/example_team_list.xlsx')
                 good_data = True
             except IOError as error:
                 print(error)
@@ -22,7 +64,7 @@ class Tournament:
                                         lambda x: x in ('y', 'n'), lambda x: x.lower())
         if good_data:
             print(len(self.teams), "teams read")
-            self.get_params()
+            self.set_params()
                       
     def ingest_sheet(self, filepath):
         filetype = filepath.split('.')[-1]
@@ -49,41 +91,20 @@ class Tournament:
         except TypeError:
             raise IOError("Could not find find columns 'Team Number' and 'Team'.")
 
-    def get_params(self):
-        self.judge_rooms = math.ceil(len(self.teams) / 12)
-        self.calib = (self.judge_rooms > 2) or (len(self.teams) % self.judge_rooms == 1)
-        self.judge_length = math.ceil((len(self.teams) - self.calib) / self.judge_rooms)
-        self.judge_start = datetime(1, 1, 1, 9)
-        self.judge_time = max(timedelta(minutes=17.5), min(timedelta(minutes=20),
-                              (datetime(1, 1, 1, 13) - self.judge_start) / self.judge_length))
+    def set_params(self):
+        self.j_sets = math.ceil(len(self.teams) / 12)
+        self.calib = (self.j_sets > 2) or (len(self.teams) % self.j_sets == 1)
+        self.j_start = datetime(1, 1, 1, 9)
+        self.j_duration = timedelta(minutes=17.5)
+        self.j_break = timedelta(minutes=7.5)
+        self.j_cycle_len = 3
 
-        print("{} judge rooms, seeing {} teams each\nStarting at {}, "
-                "seeing each team for {} and ending at {}".format(
-                    self.judge_rooms, self.judge_length, self.judge_start.strftime('%I:%M%p'),
-                    self.judge_time, (self.judge_start + (self.judge_length + 1) * self.judge_time)
-                    .strftime('%I:%M%p')))
+        self.cross_time = timedelta(minutes=12.5)
 
-       # use_defaults = clean_input("Would you like to use the default settings (y/n): ",
-       #                            lambda x: x in ('y', 'n'), lambda x: x.lower()) == 'y'
-       # self.judge_rooms = math.ceil(len(self.teams) / 12)
-       # if not use_defaults:
-       #     self.judge_rooms = clean_input("How many judging rooms are there "
-       #         "for each category (default {}): ".format(self.judge_rooms),
-       #         positive, int)
-
-       # self.judge_start = datetime(1, 1, 1, 9) #9am
-       # if not use_defaults:
-       #     self.judge_start = clean_input("When will judging start (hh:mm) (default {}): "
-       #                        .format(self.judge_start.strftime('%I:%M%p')), parse=strtotime)
-
-       # self.judge_time = max(timedelta(minutes=17.5), min(timedelta(minutes=20),
-       #                       (datetime(1, 1, 1, 13) - self.judge_start)))
-       # print("self.judge_time:", self.judge_time)
-        #if not use_defaults:
-        #    self.judge_time = timedelta(minutes=clean_input("How many "
-        #        "minutes will the judges have for each team (default {}): "
-        #        .format(self.judge_time), positive, float))
-
+        self.t_pairs = round(3 / 4 * self.j_sets)
+        self.t_duration_early = timedelta(minutes=10)
+        self.t_duration_lunch = timedelta(minutes=45)
+        self.t_duration_late = timedelta(minutes=8)
 
 if __name__ == "__main__":
     Tournament().schedule()

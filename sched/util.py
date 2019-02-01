@@ -16,7 +16,7 @@ def positive(x):
 
 import datetime
 def strtotime(in_val):
-    """Converts a hh:mm formatted time string to a (hour, minute) tuple."""
+    """Converts a hh:mm formatted time string to a datetime."""
     if ':' not in in_val:
         h, m = int(in_val), 0
     elif in_val[-3] == ':':
