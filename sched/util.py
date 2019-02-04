@@ -32,3 +32,11 @@ def chunks(l, n):
 
 def find_first(l, pred):
     return next((x for x in l if pred(x)))
+
+def sum_to(options, goal, picks):
+    select = []
+    while goal > 0 and picks > 0:
+        select += [min(options, key=lambda x:abs(x-goal/picks))]
+        picks -= 1
+        goal -= select[-1]
+    return select if goal == picks == 0 else []

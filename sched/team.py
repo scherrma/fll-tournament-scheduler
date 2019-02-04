@@ -1,4 +1,4 @@
-from datetime import timedelta
+import datetime
 
 class Team:
     def __init__(self, num, name):
@@ -16,12 +16,16 @@ class Team:
         self.events.append((start_time, duration, name, loc))
         self.events.sort()
 
-    def available(self, new_time, new_duration=timedelta(0), travel=timedelta(0)):
-        if new_duration < 0:
-            return false
-        return all([new_time + new_duration + travel < e_start or\
-                e_start + e_duration + travel < new_time for
+    def available(self, new_time, new_duration, travel=datetime.timedelta(0)):
+        return all([new_time + new_duration + travel <= e_start or\
+                e_start + e_duration + travel <= new_time for
                 (e_start, e_duration, *others) in self.events])
+
+    def next_event(self, time):
+        try:
+            return next((e for e in self.events if time < e[0]))
+        except StopIteration:
+            return (datetime.datetime.max, datetime.timedelta(0), -1, -1)
     
     def closest(self):
         return min([self.events[i + 1][0] - self.events[i][0] - self.events[i][1]
