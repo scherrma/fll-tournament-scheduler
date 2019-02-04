@@ -29,3 +29,6 @@ def chunks(l, n):
     """Yield successive n-sized chunks from l."""
     for i in range(0, len(l), n):
         yield l[i:i + n]
+
+def find_first(l, pred):
+    return next((x for x in l if pred(x)))
