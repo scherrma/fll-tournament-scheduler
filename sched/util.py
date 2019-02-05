@@ -16,12 +16,6 @@ def chunks(l, n):
     for i in range(0, len(l), n):
         yield l[i:i + n]
 
-def find_first(l, pred):
-    return next((x for x in l if pred(x)))
-
-def floor_to(num, base):
-    return num - (num % base)
-
 def sum_to(options, goal, picks):
     select = []
     while goal > 0 and picks > 0:

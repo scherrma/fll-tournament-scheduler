@@ -6,8 +6,6 @@ from sched.team import Team
 import sched.util as util
 
 class Tournament:
-    j_names = ['Project', 'Robot Design', 'Core Values'] #judging category names
-    t_names = ['Practice', 'Round 1', 'Round 2', 'Round 3'] #table round category names
     
     def schedule(self):
         self.setup()
@@ -37,13 +35,14 @@ class Tournament:
         self.j_duration_team = timedelta(minutes=10)
         self.j_break = timedelta(minutes=7.5)
         self.j_consec = 3
+        self.j_names = ['Project', 'Robot Design', 'Core Values']
 
-        self.travel_time = timedelta(minutes=12.5)
+        self.travel = timedelta(minutes=12.5)
 
         self.t_pairs = round(3 / 4 * self.j_sets)
-        self.t_duration_early = timedelta(minutes=10)
-        self.t_duration_lunch = timedelta(minutes=45)
-        self.t_duration_late = timedelta(minutes=8)
+        self.t_duration = 2*[timedelta(minutes=10)] + 2*[timedelta(minutes=8)]
+        self.t_lunch = timedelta(minutes=45)
+        self.t_names = ['Practice', 'Round 1', 'Round 2', 'Round 3']
 
     def schedule_interleaved(self):
         #judge slot scheduling
@@ -66,44 +65,43 @@ class Tournament:
             time += self.j_duration
 
         #table scheduling
-        t_team_rate = min(2*self.t_pairs, 3*self.j_sets*self.t_duration_early 
-                            / (self.j_duration + self.j_break/self.j_consec))
-        t_team_options = [2*math.ceil(t_team_rate/2 - 1), 2*math.ceil(t_team_rate/2)]
+        time_start = sum(self._team(3*self.j_calib).events[0][:2], self.travel)
+        team_idx = next((t for t in range(3*self.j_calib) if
+            self._team(t).available(time_start, self.t_duration[0], self.travel)))
 
-        avail_at = lambda team, time: self.teams[team % self.num_teams]\
-                .available(time, self.t_duration_early, self.travel_time)
+        early_avail = [self._team(team_idx - i).available(time_start - self.t_duration[0],
+                self.t_duration[0], self.travel) for i in range(2*(self.num_teams % self.t_pairs))]
+        if all(early_avail):
+            team_idx -= len(early_avail)
+            time_start -= self.t_duration[0]
 
-        time_start = self.teams[3*self.j_calib].events[0][0]\
-                   + self.teams[3*self.j_calib].events[0][1] + self.travel_time
-        team_idx = util.find_first(range(3*self.j_calib + 1), lambda x: avail_at(x, time_start))
+        early_run_rate = 3*self.j_sets*self.t_duration[0]/(self.j_duration + self.j_break/self.j_consec)
+        time = self.schedule_tables(time_start, team_idx, (0, 1), early_run_rate)
+        self.schedule_tables(time + self.t_lunch, team_idx, (2, 3))
 
-        remainder = 2*(self.num_teams % self.t_pairs)
-        if all([avail_at((team_idx - i) % self.num_teams, time_start) for i in range(remainder)]):
-            team_idx = (team_idx - remainder) % self.num_teams
-            time_start -= self.t_duration_early
+    def schedule_tables(self, start_time, start_team, rounds, run_rate=None):
+        if run_rate is None or run_rate > 2*self.t_pairs:
+            run_rate = 2*self.t_pairs
+        run_rate = 2*math.ceil(run_rate/2)
+        match_sizes = [run_rate - 2, run_rate]
 
-        time = self.schedule_tables(time_start, team_idx, self.t_duration_early, t_team_options)[0]
-        self.schedule_tables(time + self.t_duration_lunch, team_idx, self.t_duration_late, t_team_options)
-
-    def schedule_tables(self, start_time, start_team, duration, match_sizes):
         time, team = start_time, start_team
         while team < 2*self.num_teams + start_team:
-            try:
-                max_teams = next((t for t in range(self.num_teams) if not 
-                    self.teams[(t + team) % self.num_teams].available(time, duration, self.travel_time)))
-            except:
-                max_teams = 2*self.num_teams
-            max_matches = (self.teams[team % self.num_teams].next_event(time)[0] - time - self.travel_time) // duration
+            rd = rounds[(team - start_team) // self.num_teams]
+            max_teams = next((t for t in range(self.num_teams) if not self._team(t + team)
+                    .available(time, self.t_duration[rd], self.travel)), 2*self.num_teams)
+            max_matches = (self._team(team).next_event(time)[0] - time - self.travel)\
+                            // self.t_duration[(team - start_team) // self.num_teams]
             if team + max_teams >= 2*self.num_teams + start_team:
                 max_teams = 2*self.num_teams + start_team - team
                 max_matches = math.ceil(max_teams / match_sizes[-1]) 
 
             for match_size in util.sum_to(match_sizes, max_teams, max_matches):
                 for t in range(team, team + match_size):
-                    self.teams[t % self.num_teams].add_event(time, duration, -1, -1)
+                    self._team(t).add_event(time, self.t_duration[rd], -1, -1)
                 team += match_size
-                time += duration
-        return (time, team)
+                time += self.t_duration[rd]
+        return time
                
     def export(self):
         longest_name = max([len(str(team)) for team in self.teams])
@@ -137,6 +135,9 @@ class Tournament:
                     (num, name) in df.filter(items=["Team Number", "Team"]).values]
         except TypeError:
             raise IOError("Could not find find columns 'Team Number' and 'Team'.")
+
+    def _team(self, team_num):
+        return self.teams[team_num % self.num_teams]
         
 if __name__ == "__main__":
     Tournament().schedule()
