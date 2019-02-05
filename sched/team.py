@@ -2,12 +2,12 @@ import datetime
 
 class Team:
     def __init__(self, num, name):
-        self.team_num = str(num)
-        self.team_name = name
+        self.num = str(num)
+        self.name = name
         self.events = []
 
     def __str__(self):
-        return "Team " + self.team_num + " " + self.team_name
+        return "Team " + self.num + " " + self.name
 
     def __repr__(self):
         return str(self)

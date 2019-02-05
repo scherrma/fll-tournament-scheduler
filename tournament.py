@@ -57,19 +57,20 @@ class Tournament:
         if self.j_calib:
             self.j_slots = [([0], [1], [2])] + self.j_slots
 
+        time = self.j_start
         for timeslot in range(len(self.j_slots)):
-            time = self.j_start + timeslot*self.j_duration\
-                 + (timeslot + 2*self.j_calib) // self.j_consec * self.j_break
-
+            if (timeslot - self.j_calib) % self.j_consec == 0 and timeslot + 1 < len(self.j_slots):
+                time += self.j_break
             for cat in range(3):
                 for i in range(len(self.j_slots[timeslot][cat])):
                     self.teams[self.j_slots[timeslot][cat][i]]\
                             .add_event(time, self.j_duration_team, self.j_names[cat], i)
+            time += self.j_duration
 
         #table scheduling
-        t_team_rate = 3*self.j_sets*self.t_duration_early\
-                      /(self.j_duration + self.j_break/self.j_consec)
-        t_team_options = [2*math.floor(t_team_rate/2), 2*math.ceil(t_team_rate/2)]
+        t_team_rate = min(2*self.t_pairs, 3*self.j_sets*self.t_duration_early 
+                            / (self.j_duration + self.j_break/self.j_consec))
+        t_team_options = [2*math.ceil(t_team_rate/2 - 1), 2*math.ceil(t_team_rate/2)]
 
         avail_at = lambda team, time: self.teams[team % self.num_teams]\
                 .available(time, self.t_duration_early, self.travel_time)
@@ -77,6 +78,12 @@ class Tournament:
         time_start = self.teams[3*self.j_calib].events[0][0]\
                    + self.teams[3*self.j_calib].events[0][1] + self.travel_time
         team_idx = sched.util.find_first(range(3*self.j_calib + 1), lambda x: avail_at(x, time_start))
+
+        remainder = 2*(self.num_teams % self.t_pairs)
+        if all([avail_at((team_idx - i) % self.num_teams, time_start) for i in range(remainder)]):
+            team_idx = (team_idx - remainder) % self.num_teams
+            time_start -= self.t_duration_early
+
         team_first, team_last = team_idx, team_idx + 2*self.num_teams
 
         while team_idx < team_first + 2*self.num_teams:
@@ -89,29 +96,31 @@ class Tournament:
                             2*self.num_teams + team_first - team_idx)
             matches_max = min(matches_max, teams_max/t_team_options[0])
             match_split = sched.util.sum_to(t_team_options, teams_max, matches_max)
+            if not match_split:
+                raise ArithmeticError("Empty match split")
             
             for match_size in match_split:
                 for t in range(team_idx, team_idx + match_size):
-                    self.teams[t % self.num_teams].add_event(time_start, self.t_duration_early,
-                            self.t_names[int((t - team_first) / self.num_teams)],
-                            t % (2 * self.t_pairs))
+                    self.teams[t % self.num_teams].add_event(time_start, self.t_duration_early, 
+                            self.t_names[(t - team_first) // self.num_teams], -1)
                 team_idx += match_size
                 time_start += self.t_duration_early
 
         time_start += self.t_duration_lunch
-        match_sizes = sched.util.sum_to([2*(self.t_pairs - 1), 2*self.t_pairs], 2*self.num_teams, 
-                        math.ceil(self.num_teams/self.t_pairs))
+        match_sizes = [2*(self.num_teams % self.t_pairs)]\
+                    + (self.num_teams // self.t_pairs) * [2*self.t_pairs]
+
         for match_size in match_sizes:
-            for team in range(match_size):
-                self.teams[(team_idx + team) % self.num_teams].add_event(time_start, self.t_duration_late,
-                    self.t_names[int((team + team_idx - team_first) / self.num_teams)], t % (2 * self.t_pairs))
+            for t in range(team_idx, team_idx + match_size):
+                self.teams[t % self.num_teams].add_event(time_start, self.t_duration_late,
+                    self.t_names[(t - team_first) // self.num_teams], -1)
             team_idx += match_size
             time_start += self.t_duration_late
-
                
     def export(self):
+        longest_name = max([len(str(team)) for team in self.teams])
         for team in self.teams:
-            print(team, "\tclosest:",team.closest())
+            print("{:<{}}   (closest: {})".format(str(team), longest_name, team.closest()))
             print(''.join(['\t{} - {} {} ({})\n'.format(time.strftime('%r'), name,
                 loc + 1, duration) for (time, duration, name, loc) in team.events]))
             
