@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 import pandas
 import math
 from datetime import datetime, timedelta
@@ -6,7 +6,6 @@ from sched.team import Team
 import sched.util as util
 
 class Tournament:
-    
     def schedule(self):
         self.setup()
         self.set_params()

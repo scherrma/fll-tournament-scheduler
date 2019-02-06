@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 def clean_input(question, validate = None, parse = None):
     """Continually requests input from terminal until given something parseable that passes validate"""
     while True:
