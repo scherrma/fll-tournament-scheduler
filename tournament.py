@@ -1,48 +1,20 @@
 #!/usr/bin/env python3
-import pandas
+import pandas as pd
 import math
+import numpy as np
 from datetime import datetime, timedelta
-from sched.team import Team
-import sched.util as util
+from scheduler.team import Team
+import scheduler.util as util
 
 class Tournament:
+    def __init__(self):
+        self.fpath = "input_sheet.xlsx"
+
     def schedule(self):
-        self.setup()
-        self.set_params()
+        self.read_data(self.fpath)
         self.schedule_interleaved()
         self.export()
     
-    def setup(self):
-        good_data = False
-        try_again = 'y'
-        while try_again == 'y' and not good_data:
-            try:
-                self.ingest_sheet('/mnt/c/Users/Marty/Desktop/fll-tournament-scheduler/testdata/example_team_list.xlsx')
-                good_data = True
-            except IOError as error:
-                print(error)
-                try_again = util.clean_input("Would you like to try another file (y/n): ",
-                                        lambda x: x in ('y', 'n'), lambda x: x.lower())
-        print(len(self.teams), "teams read")
-   
-    def set_params(self):
-        self.num_teams = len(self.teams)
-        self.j_sets = math.ceil(self.num_teams / 12)
-        self.j_calib = (self.j_sets > 2) or (self.num_teams % self.j_sets == 1)
-        self.j_start = datetime(1, 1, 1, 9)
-        self.j_duration = timedelta(minutes=17.5)
-        self.j_duration_team = timedelta(minutes=10)
-        self.j_break = timedelta(minutes=7.5)
-        self.j_consec = 3
-        self.j_names = ['Project', 'Robot Design', 'Core Values']
-
-        self.travel = timedelta(minutes=12.5)
-
-        self.t_pairs = round(3 / 4 * self.j_sets)
-        self.t_duration = 2*[timedelta(minutes=10)] + 2*[timedelta(minutes=8)]
-        self.t_lunch = timedelta(minutes=45)
-        self.t_names = ['Practice', 'Round 1', 'Round 2', 'Round 3']
-
     def schedule_interleaved(self):
         #judge slot scheduling
         rot_dir = 1 if (3*self.j_calib - self.num_teams) % 3 is 1 else -1
@@ -60,7 +32,7 @@ class Tournament:
             for cat in range(3):
                 for i in range(len(self.j_slots[timeslot][cat])):
                     self.teams[self.j_slots[timeslot][cat][i]]\
-                            .add_event(time, self.j_duration_team, self.j_names[cat], i)
+                            .add_event(time, self.j_duration_team, cat, i)
             time += self.j_duration
 
         #table scheduling
@@ -76,7 +48,9 @@ class Tournament:
 
         early_run_rate = 3*self.j_sets*self.t_duration[0]/(self.j_duration + self.j_break/self.j_consec)
         time = self.schedule_tables(time_start, team_idx, (0, 1), early_run_rate)
-        self.schedule_tables(time + self.t_lunch, team_idx, (2, 3))
+        team_idx = next((t for t in range(team_idx, team_idx + self.num_teams) if
+                        self._team(t).available(time, self.t_duration[2], self.travel)))
+        self.schedule_tables(time + self.t_lunch_duration, team_idx, (2, 3))
 
     def schedule_tables(self, start_time, start_team, rounds, run_rate=None):
         if run_rate is None or run_rate > 2*self.t_pairs:
@@ -91,13 +65,14 @@ class Tournament:
                     .available(time, self.t_duration[rd], self.travel)), 2*self.num_teams)
             max_matches = (self._team(team).next_event(time)[0] - time - self.travel)\
                             // self.t_duration[(team - start_team) // self.num_teams]
+
             if team + max_teams >= 2*self.num_teams + start_team:
                 max_teams = 2*self.num_teams + start_team - team
                 max_matches = math.ceil(max_teams / match_sizes[-1]) 
 
             for match_size in util.sum_to(match_sizes, max_teams, max_matches):
                 for t in range(team, team + match_size):
-                    self._team(t).add_event(time, self.t_duration[rd], -1, -1)
+                    self._team(t).add_event(time, self.t_duration[rd], 3, 0)
                 team += match_size
                 time += self.t_duration[rd]
         return time
@@ -106,28 +81,18 @@ class Tournament:
         longest_name = max([len(str(team)) for team in self.teams])
         for team in self.teams:
             print("{:<{}}   (closest: {})".format(str(team), longest_name, team.closest()))
-            print(''.join(['\t{} - {} {} ({})\n'.format(time.strftime('%r'), name,
-                loc + 1, duration) for (time, duration, name, loc) in team.events]))
+            print(''.join(['\t{} - {} ({})\n'.format(time.strftime('%r'), self.event_names[cat],
+                self.rooms[cat][loc]) for (time, dur, cat, loc) in team.events]))
             
     def ingest_sheet(self, filepath):
-        filetype = filepath.split('.')[-1]
-        if filetype not in ('csv', 'xls', 'xlsx'):
-            raise IOError("Invalid file type. The file must be either csv, xls, or xlsx.")
-            
-        if filetype == 'csv':
-            try:
-                df = pandas.read_csv(filepath)
-            except pandas.errors.EmptyDataError:
-                raise IOError("The selected file is empty.")
-        elif filetype in ['xls', 'xlsx']:
-            sheet = 0
-            xl = pandas.ExcelFile(filepath)
-            if len(xl.sheet_names) > 1:
-                sheets = list(map(lambda x: x.lower(), xl.sheet_names))
-                sheet = util.clean_input("Which sheet has the team list: "
-                            + ', '.join(xl.sheet_names) + '\n',
-                            parse = lambda x: sheets.index(x.lower()))
-            df = xl.parse(sheet_name=sheet)
+        sheet = 0
+        xl = pd.ExcelFile(filepath)
+        if len(xl.sheet_names) > 1:
+            sheets = list(map(lambda x: x.lower(), xl.sheet_names))
+            sheet = util.clean_input("Which sheet has the team list: "
+                        + ', '.join(xl.sheet_names) + '\n',
+                        parse = lambda x: sheets.index(x.lower()))
+        df = xl.parse(sheet_name=sheet)
         
         try:
             self.teams = [Team(num, name) for 
@@ -137,6 +102,45 @@ class Tournament:
 
     def _team(self, team_num):
         return self.teams[team_num % self.num_teams]
+
+    def read_data(self, fpath):
+        team_sheet = pd.read_excel(fpath, sheet_name="Team Information")
+        self.teams = [Team(*x) for x in team_sheet.loc[:, ("Team Number", "Team")].values]
+
+        param_sheet = pd.read_excel(fpath, sheet_name="Input Form").set_index("key")
+        param = dict(param_sheet.loc[:, "answer"].items())
+
+        self.num_teams = len(self.teams)
+        self.tournament_name = param["tournament_name"]
+        self.scheduling_method = param["scheduling_method"]
+        self.travel = timedelta(minutes=param["travel_time"])
+
+        self.j_start = datetime(1, 1, 1, param["j_start"].hour, param["j_start"].minute)
+        self.j_sets = param["j_sets"]
+        self.j_calib = (param["j_calib"] == "Yes")
+        self.j_duration = timedelta(minutes=param["j_duration"])
+        self.j_consec = param["j_consec"]
+        self.j_break = timedelta(minutes=param["j_break"])
+        self.j_lunch = datetime(1, 1, 1, param["j_lunch"].hour, param["j_lunch"].minute)
+        self.j_lunch_duration = timedelta(minutes=param["j_lunch_duration"])
+
+        self.rooms = [param_sheet.loc[key].dropna().values.tolist()[1:]
+                        for key in ("j_project_rooms", "j_robot_rooms", "j_values_rooms")]
+        
+        #these are hacks and should be fixed or done elsewhere
+        self.rooms += [["Competition Floor"]]
+        self.event_names = ['Project', 'Robot Design', 'Core Values', 'Robot Game']
+        self.j_duration_team = timedelta(minutes=10)
+
+        #back to not-hacks
+        self.t_pairs = param["t_pairs"]
+        self.t_lunch = datetime(1, 1, 1, param["t_lunch"].hour, param["t_lunch"].minute)
+        self.t_lunch_duration = timedelta(minutes=param["t_lunch_duration"])
+
+        self.t_round_names = param_sheet.loc["t_round_names"].dropna().values.tolist()[1:]
+        self.t_rounds = len(self.t_round_names)
+        self.t_duration = [timedelta(minutes=x) for x in 
+                param_sheet.loc["t_durations"].dropna().values.tolist()[1:]]
         
 if __name__ == "__main__":
     Tournament().schedule()
