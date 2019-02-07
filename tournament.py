@@ -4,9 +4,13 @@ import math
 from datetime import datetime, timedelta
 from scheduler.team import Team
 import scheduler.util as util
+
+import xlrd
+
 import tkinter
 from tkinter import filedialog
 import sys
+import os
 
 class Tournament:
     def __init__(self):
@@ -22,11 +26,26 @@ class Tournament:
             print("{} accepts 0 or 1 arguments; {} received".format(sys.argv[0], len(sys.argv) - 1))
 
     def schedule(self):
-        self.read_data(self.fpath)
-        self.schedule_interleaved()
-        self.export()
+        try:
+            self.read_data(self.fpath)
+
+            if self.scheduling_method == "Interlaced":
+                self.schedule_interlaced()
+            elif self.scheduled_method == "Block":
+                self.schedule_block()
+            else:
+                raise ValueError(self.scheduling_method + " scheduling is not supported")
+
+            self.export()
+
+        except Exception as e:
+            #raise e
+            print(e)
+            if sys.platform == "win32":
+                os.system("pause")
+            raise SystemExit
     
-    def schedule_interleaved(self):
+    def schedule_interlaced(self):
         #judge slot scheduling
         rot_dir = 1 if (3*self.j_calib - self.num_teams) % 3 is 1 else -1
         self.j_slots = [sum([list(range((j + i*rot_dir) % 3, self.num_teams, 3))
@@ -58,10 +77,14 @@ class Tournament:
             time_start -= self.t_duration[0]
 
         early_run_rate = 3*self.j_sets*self.t_duration[0]/(self.j_duration + self.j_break/self.j_consec)
-        time = self.schedule_tables(time_start, team_idx, (0, 1), early_run_rate)
+        time = self.schedule_tables(time_start, team_idx, (0, 1), early_run_rate) + self.t_lunch_duration
+        time += timedelta(minutes=(-time.minute % 5), seconds=-time.second)
         team_idx = next((t for t in range(team_idx, team_idx + self.num_teams) if
                         self._team(t).available(time, self.t_duration[2], self.travel)))
         self.schedule_tables(time + self.t_lunch_duration, team_idx, (2, 3))
+
+    def schedule_block(self):
+        raise NotImplementedError
 
     def schedule_tables(self, start_time, start_team, rounds, run_rate=None):
         if run_rate is None or run_rate > 2*self.t_pairs:
@@ -83,59 +106,69 @@ class Tournament:
 
             for match_size in util.sum_to(match_sizes, max_teams, max_matches):
                 for t in range(team, team + match_size):
-                    self._team(t).add_event(time, self.t_duration[rd], 3, 0)
+                    self._team(t).add_event(time, self.t_duration[rd],
+                            3 + rounds[(t - start_team) // self.num_teams], 0)
                 team += match_size
                 time += self.t_duration[rd]
         return time
                
     def export(self):
         longest_name = max([len(str(team)) for team in self.teams])
+        print(self.rooms)
         for team in self.teams:
             print("{:<{}}   (closest: {})".format(str(team), longest_name, team.closest()))
-            print(''.join(['\t{} - {} ({})\n'.format(time.strftime('%r'), self.event_names[cat],
-                self.rooms[cat][loc]) for (time, dur, cat, loc) in team.events]))
+            print(''.join(['\t{} - {} ({})\n'.format(time.strftime('%r'), self.event_names[cat], 
+                            self.rooms[min(cat, 3)][loc]) for (time, dur, cat, loc) in team.events]))
             
     def _team(self, team_num):
         return self.teams[team_num % self.num_teams]
 
     def read_data(self, fpath):
-        team_sheet = pd.read_excel(fpath, sheet_name="Team Information")
-        self.teams = [Team(*x) for x in team_sheet.loc[:, ("Team Number", "Team")].values]
+        dfs = pd.read_excel(fpath, sheet_name=["Team Information", "Input Form"])
 
-        param_sheet = pd.read_excel(fpath, sheet_name="Input Form").set_index("key")
+        team_sheet = dfs["Team Information"]
+        if all([x in team_sheet.columns for x in ("Team Number", "Team")]):
+            self.teams = [Team(*x) for x in team_sheet.loc[:, ("Team Number", "Team")].values]
+        else:
+            raise KeyError("Could not find columns 'Team Number' and 'Team' in sheet 'Team Information'")
+
+        param_sheet = dfs["Input Form"]
+        if any([x not in param_sheet.columns for x in ("key", "answer")]):
+            raise KeyError("Could not find columns 'key' and 'answer' in sheet 'Input Form'")
+        param_sheet = param_sheet.set_index("key")
         param = dict(param_sheet.loc[:, "answer"].items())
 
         self.num_teams = len(self.teams)
-        self.tournament_name = param["tournament_name"]
-        self.scheduling_method = param["scheduling_method"]
-        self.travel = timedelta(minutes=param["travel_time"])
-
-        self.j_start = datetime(1, 1, 1, param["j_start"].hour, param["j_start"].minute)
-        self.j_sets = param["j_sets"]
-        self.j_calib = (param["j_calib"] == "Yes")
-        self.j_duration = timedelta(minutes=param["j_duration"])
-        self.j_consec = param["j_consec"]
-        self.j_break = timedelta(minutes=param["j_break"])
-        self.j_lunch = datetime(1, 1, 1, param["j_lunch"].hour, param["j_lunch"].minute)
-        self.j_lunch_duration = timedelta(minutes=param["j_lunch_duration"])
-
-        self.rooms = [param_sheet.loc[key].dropna().values.tolist()[1:]
-                        for key in ("j_project_rooms", "j_robot_rooms", "j_values_rooms")]
-        
-        #these are hacks and should be fixed or done elsewhere
-        self.rooms += [["Competition Floor"]]
-        self.event_names = ['Project', 'Robot Design', 'Core Values', 'Robot Game']
-        self.j_duration_team = timedelta(minutes=10)
-
-        #back to not-hacks
-        self.t_pairs = param["t_pairs"]
-        self.t_lunch = datetime(1, 1, 1, param["t_lunch"].hour, param["t_lunch"].minute)
-        self.t_lunch_duration = timedelta(minutes=param["t_lunch_duration"])
-
-        self.t_round_names = param_sheet.loc["t_round_names"].dropna().values.tolist()[1:]
-        self.t_rounds = len(self.t_round_names)
-        self.t_duration = [timedelta(minutes=x) for x in 
+        try:
+            self.tournament_name = param["tournament_name"]
+            self.scheduling_method = param["scheduling_method"]
+            self.travel = timedelta(minutes=param["travel_time"])
+            self.event_names = ['Project', 'Robot Design', 'Core Values']\
+                             + param_sheet.loc["t_round_names"].dropna().values.tolist()[1:]
+            self.rooms = [param_sheet.loc[key].dropna().values.tolist()[1:]
+                         for key in ("j_project_rooms", "j_robot_rooms", "j_values_rooms")]
+            self.rooms += [sum([[tbl + ' A', tbl + ' B'] for tbl in param_sheet.loc["t_pair_names"]
+                                .dropna().values.tolist()[1:]], [])]
+            
+            self.j_start = datetime(1, 1, 1, param["j_start"].hour, param["j_start"].minute)
+            self.j_sets = param["j_sets"]
+            self.j_calib = (param["j_calib"] == "Yes")
+            self.j_duration = timedelta(minutes=param["j_duration"])
+            self.j_duration_team = timedelta(minutes=10)
+            self.j_consec = param["j_consec"]
+            self.j_break = timedelta(minutes=param["j_break"])
+            self.j_lunch = datetime(1, 1, 1, param["j_lunch"].hour, param["j_lunch"].minute)
+            self.j_lunch_duration = timedelta(minutes=param["j_lunch_duration"])
+            
+            self.t_pairs = param["t_pairs"]
+            self.t_rounds = len(self.event_names[-1])
+            self.t_duration = [timedelta(minutes=x) for x in 
                 param_sheet.loc["t_durations"].dropna().values.tolist()[1:]]
+            self.t_lunch = datetime(1, 1, 1, param["t_lunch"].hour, param["t_lunch"].minute)
+            self.t_lunch_duration = timedelta(minutes=param["t_lunch_duration"])
+            
+        except KeyError as e:
+            raise KeyError(str(e) + " not found in 'key' column in sheet 'Input Form'")
         
 if __name__ == "__main__":
     Tournament().schedule()
