@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 import pandas as pd
 import math
-import numpy as np
 from datetime import datetime, timedelta
 from scheduler.team import Team
 import scheduler.util as util
