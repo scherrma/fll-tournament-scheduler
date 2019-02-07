@@ -1,14 +1,25 @@
 #!/usr/bin/env python3
 import pandas as pd
 import math
-import numpy as np
 from datetime import datetime, timedelta
 from scheduler.team import Team
 import scheduler.util as util
+import tkinter
+from tkinter import filedialog
+import sys
 
 class Tournament:
     def __init__(self):
-        self.fpath = "input_sheet.xlsx"
+        if len(sys.argv) == 1:
+            root = tkinter.Tk()
+            root.withdraw()
+            self.fpath = filedialog.askopenfilename(
+                    filetypes=[("Excel files (*.xls, *.xlsm, *.xlsx)", "*.xls;*.xlsm;*.xlsx")])
+            root.destroy()
+        elif len(sys.argv) == 2:
+            self.fpath = sys.argv[1]
+        else:
+            print("{} accepts 0 or 1 arguments; {} received".format(sys.argv[0], len(sys.argv) - 1))
 
     def schedule(self):
         self.read_data(self.fpath)
@@ -84,22 +95,6 @@ class Tournament:
             print(''.join(['\t{} - {} ({})\n'.format(time.strftime('%r'), self.event_names[cat],
                 self.rooms[cat][loc]) for (time, dur, cat, loc) in team.events]))
             
-    def ingest_sheet(self, filepath):
-        sheet = 0
-        xl = pd.ExcelFile(filepath)
-        if len(xl.sheet_names) > 1:
-            sheets = list(map(lambda x: x.lower(), xl.sheet_names))
-            sheet = util.clean_input("Which sheet has the team list: "
-                        + ', '.join(xl.sheet_names) + '\n',
-                        parse = lambda x: sheets.index(x.lower()))
-        df = xl.parse(sheet_name=sheet)
-        
-        try:
-            self.teams = [Team(num, name) for 
-                    (num, name) in df.filter(items=["Team Number", "Team"]).values]
-        except TypeError:
-            raise IOError("Could not find find columns 'Team Number' and 'Team'.")
-
     def _team(self, team_num):
         return self.teams[team_num % self.num_teams]
 
