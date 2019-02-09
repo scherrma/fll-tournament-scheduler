@@ -39,7 +39,7 @@ class Tournament:
             self.export()
 
         except Exception as e:
-            #raise e
+            raise e
             print(e)
             if sys.platform == "win32":
                 os.system("pause")
@@ -57,7 +57,7 @@ class Tournament:
 
         time = self.j_start
         for timeslot in range(len(self.j_slots)):
-            if (timeslot - self.j_calib) % self.j_consec == 0 and timeslot + 1 < len(self.j_slots):
+            if (timeslot - self.j_calib) % self.j_consec == 0 and 0 < timeslot < len(self.j_slots) - 1:
                 time += self.j_break
             for cat in range(3):
                 for i in range(len(self.j_slots[timeslot][cat])):
@@ -67,50 +67,58 @@ class Tournament:
 
         #table scheduling
         time_start = sum(self._team(3*self.j_calib).events[0][:2], self.travel)
-        team_idx = next((t for t in range(3*self.j_calib) if
+        team_idx = next((t for t in range(3*self.j_calib + 1) if
             self._team(t).available(time_start, self.t_duration[0], self.travel)))
 
-        early_avail = [self._team(team_idx - i).available(time_start - self.t_duration[0],
-                self.t_duration[0], self.travel) for i in range(2*(self.num_teams % self.t_pairs))]
-        if all(early_avail):
-            team_idx -= len(early_avail)
-            time_start -= self.t_duration[0]
+        round_split = [(0, 1), (2, 3)]
+        run_rates = [3*self.j_sets*self.t_duration[0]/(self.j_duration + self.j_break/self.j_consec), None]
+        break_times = (None, self.t_lunch_duration)
 
-        early_run_rate = 3*self.j_sets*self.t_duration[0]/(self.j_duration + self.j_break/self.j_consec)
-        time = self.schedule_tables(time_start, team_idx, (0, 1), early_run_rate) + self.t_lunch_duration
-        time += timedelta(minutes=(-time.minute % 5), seconds=-time.second)
-        team_idx = next((t for t in range(team_idx, team_idx + self.num_teams) if
-                        self._team(t).available(time, self.t_duration[2], self.travel)))
-        self.schedule_tables(time + self.t_lunch_duration, team_idx, (2, 3))
+        min_early_run_rate = max(2, 2*math.ceil(run_rates[0]/2))
+        if self.num_teams % min_early_run_rate:
+            early_avail = [self._team(team_idx - i).available(time_start - self.t_duration[0],
+                self.t_duration[0], self.travel) for i in range(min_early_run_rate)]
+            if all(early_avail):
+                team_idx -= len(early_avail)
+                time_start -= self.t_duration[0]
+
+        self.schedule_tables(time_start, team_idx, zip(round_split, run_rates, break_times))
 
     def schedule_block(self):
         raise NotImplementedError
 
-    def schedule_tables(self, start_time, start_team, rounds, run_rate=None):
-        if run_rate is None or run_rate > 2*self.t_pairs:
-            run_rate = 2*self.t_pairs
-        run_rate = 2*math.ceil(run_rate/2)
-        match_sizes = [run_rate - 2, run_rate]
+    def schedule_tables(self, time, team, round_info):
+        start_team = team
+        for (rounds, run_rate, break_time) in round_info:
+            if run_rate is None or run_rate > 2*self.t_pairs:
+                run_rate = 2*self.t_pairs
+            run_rate = 2*math.ceil(run_rate/2)
+            match_sizes = [max(2, run_rate - 2), run_rate]
 
-        time, team = start_time, start_team
-        while team < 2*self.num_teams + start_team:
-            rd = rounds[(team - start_team) // self.num_teams]
-            max_teams = next((t for t in range(self.num_teams) if not self._team(t + team)
+            time += (break_time if break_time else timedelta(0))
+            team = next((t for t in range(team, team + self.num_teams) if
+                        self._team(t).available(time, self.t_duration[rounds[0]], self.travel)))
+            start_team = team
+
+            while team < 2*self.num_teams + start_team:
+                rd = rounds[(team - start_team) // self.num_teams]
+                max_teams = next((t for t in range(self.num_teams) if not self._team(t + team)
                     .available(time, self.t_duration[rd], self.travel)), 2*self.num_teams)
-            max_matches = (self._team(team).next_event(time)[0] - time - self.travel)\
-                            // self.t_duration[(team - start_team) // self.num_teams]
+                max_matches = (self._team(team).next_event(time)[0] - time - self.travel)\
+                        // self.t_duration[(team - start_team) // self.num_teams]
 
-            if team + max_teams >= 2*self.num_teams + start_team:
-                max_teams = 2*self.num_teams + start_team - team
-                max_matches = math.ceil(max_teams / match_sizes[-1]) 
+                if team + max_teams >= 2*self.num_teams + start_team:
+                    max_teams = 2*self.num_teams + start_team - team
+                    max_matches = math.ceil(max_teams / match_sizes[-1])
 
-            for match_size in util.sum_to(match_sizes, max_teams, max_matches):
-                for t in range(team, team + match_size):
-                    self._team(t).add_event(time, self.t_duration[rd],
-                            3 + rounds[(t - start_team) // self.num_teams], 0)
-                team += match_size
-                time += self.t_duration[rd]
+                for match_size in util.sum_to(match_sizes, max_teams, max_matches):
+                    for t in range(team, team + match_size):
+                        self._team(t).add_event(time, self.t_duration[rd], 3 
+                                + rounds[(t - start_team) // self.num_teams], t % self.t_pairs)
+                    team += match_size
+                    time += self.t_duration[rd]
         return time
+
                
     def export(self):
         longest_name = max([len(str(team)) for team in self.teams])
