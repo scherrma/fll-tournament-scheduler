@@ -35,11 +35,14 @@ class Tournament:
                 self.schedule_block()
             else:
                 raise ValueError(self.scheduling_method + " scheduling is not supported")
+            self.assign_tables()
 
+            #for match in self.t_slots:
+            #    print('{}: {}'.format(match[0].strftime('%r'), match[2]))
             self.export()
 
         except Exception as e:
-            raise e
+            #raise e
             print(e)
             if sys.platform == "win32":
                 os.system("pause")
@@ -82,12 +85,14 @@ class Tournament:
                 team_idx -= len(early_avail)
                 time_start -= self.t_duration[0]
 
-        self.schedule_tables(time_start, team_idx, zip(round_split, run_rates, break_times))
+        self.schedule_matches(time_start, team_idx, zip(round_split, run_rates, break_times))
 
     def schedule_block(self):
         raise NotImplementedError
 
-    def schedule_tables(self, time, team, round_info):
+    def schedule_matches(self, time, team, round_info):
+        self.t_slots = []
+        t_idle = 0
         start_team = team
         for (rounds, run_rate, break_time) in round_info:
             if run_rate is None or run_rate > 2*self.t_pairs:
@@ -104,25 +109,38 @@ class Tournament:
                 rd = rounds[(team - start_team) // self.num_teams]
                 max_teams = next((t for t in range(self.num_teams) if not self._team(t + team)
                     .available(time, self.t_duration[rd], self.travel)), 2*self.num_teams)
-                max_matches = (self._team(team).next_event(time)[0] - time - self.travel)\
-                        // self.t_duration[(team - start_team) // self.num_teams]
 
                 if team + max_teams >= 2*self.num_teams + start_team:
                     max_teams = 2*self.num_teams + start_team - team
-                    max_matches = math.ceil(max_teams / match_sizes[-1])
+                    max_matches = min(max_matches, math.ceil(max_teams / match_sizes[-1]))
+                elif self._team(team).next_event(time)[0] == datetime.max:
+                    max_matches = max_teams // match_sizes[-1]
+                else:
+                    max_matches = (self._team(team).next_event(time)[0] - time - self.travel)\
+                        // self.t_duration[rd]
 
                 for match_size in util.sum_to(match_sizes, max_teams, max_matches):
-                    for t in range(team, team + match_size):
-                        self._team(t).add_event(time, self.t_duration[rd], 3 
-                                + rounds[(t - start_team) // self.num_teams], t % self.t_pairs)
+                    timeslot = list(range(team, team + match_size))
+                    if match_size < match_sizes[-1]:
+                        timeslot[t_idle:t_idle] = (match_sizes[-1] - match_size)*[None]
+                        t_idle = (t_idle + 2) % match_sizes[-1]
+                    self.t_slots += [(time, rd, [(t % self.num_teams if t is not None else None) 
+                                                                        for t in timeslot])]
                     team += match_size
                     time += self.t_duration[rd]
-        return time
-
+    
+    def assign_tables(self):
+        for (match_time, rd, teams) in self.t_slots:
+            for i in [j for j in range(len(teams)) if teams[j] is not None]:
+                self._team(teams[i]).add_event(match_time, self.t_duration[rd], 3, i)
+        for t in self.teams:
+            rd = 0
+            for event in [e for e in t.events if e[2] == 3]:
+                event[2] += rd
+                rd += 1
                
     def export(self):
         longest_name = max([len(str(team)) for team in self.teams])
-        print(self.rooms)
         for team in self.teams:
             print("{:<{}}   (closest: {})".format(str(team), longest_name, team.closest()))
             print(''.join(['\t{} - {} ({})\n'.format(time.strftime('%r'), self.event_names[cat], 

@@ -14,7 +14,7 @@ class Team:
         return str(self)
 
     def add_event(self, start_time, duration, name, loc):
-        self.events.append((start_time, duration, name, loc))
+        self.events.append([start_time, duration, name, loc])
         self.events.sort()
 
     def available(self, new_time, new_duration, travel=datetime.timedelta(0)):

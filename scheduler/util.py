@@ -18,8 +18,11 @@ def chunks(l, n):
 
 def sum_to(options, goal, picks):
     select = []
-    while goal > 0 and picks > 0:
-        select += [min(options, key=lambda x:abs(x-goal/picks))]
-        picks -= 1
-        goal -= select[-1]
+    if goal < min(options):
+        select = [goal]
+    else:
+        while goal > 0 and picks > 0:
+            select += [min(options, key=lambda x:abs(x-goal/picks))]
+            picks -= 1
+            goal -= select[-1]
     return select
