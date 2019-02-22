@@ -7,11 +7,13 @@ from scheduler.team import Team
 import scheduler.util as util
 
 import openpyxl
+import openpyxl.styles as styles
 
 import tkinter
 from tkinter import filedialog
 import sys
 import os
+import itertools
 
 class Tournament:
     def __init__(self):
@@ -140,19 +142,41 @@ class Tournament:
                
     def export(self):
         wb = openpyxl.Workbook()
+        thin = styles.Side(border_style='thin', color='000000')
+        thick = styles.Side(border_style='thick', color='000000')
+        
         ws1 = wb.active
-
         ws1.title = "Judging"
-        ws1.append(sum([[cat] + (self.j_sets - 1)*[''] for cat in self.event_names[:3]], ['']))
+        ws1.append(sum([[cat] + (self.j_sets - 1)*[''] for cat in self.event_names[:3]], ['']) + [''])
         ws1.append(sum([cat[:self.j_sets] for cat in self.rooms[:3]], ['']))
         for (time, teams) in self.j_slots:
-            line = sum([t + ((self.j_sets - len(teams[0]))*['None']) for t in teams], 
-                    [time.strftime('%-I:%M %p')])
+            line = [time.strftime('%-I:%M %p ')]
+            if self.j_calib and len(teams[0]) == 1:
+                for (team, area, rooms) in zip(sum(teams, []), self.event_names[:3], self.rooms[:3]):
+                    line += [team, "all {} judges in {}".format(area.lower(), rooms[0])]\
+                         + (self.j_sets - 2)*['']
+            else:
+                line += sum([t + ((self.j_sets - len(teams[0]))*['None']) for t in teams], [])
             ws1.append(line)
-        for j in [1, 3] if self.j_calib else [1]:
-            for i in range(3):
-                ws1.merge_cells(start_row=j, start_column=(i*self.j_sets + 2),
-                                  end_row=j,   end_column=((i+1)*self.j_sets + 1))
+        for i in range(3):
+            for j in [1, 3] if self.j_calib else [1]:
+                ws1.merge_cells(start_row=j, start_column=i*self.j_sets + 2 + (j == 3),
+                                  end_row=j,   end_column=(i+1)*self.j_sets + 1)
+                cell = ws1.cell(row=j, column=(i*self.j_sets + 2))
+                cell.border = styles.Border(left=thick, right=thick)
+                if j == 1:
+                    cell.font = styles.Font(bold=True)
+            ws1.cell(row=2, column=i*self.j_sets + 2).border = styles.Border(left=thick, bottom=thin)
+            for j in range(1, self.j_sets):
+                ws1.cell(row=2, column=(i*self.j_sets + 2 + j)).border = styles.Border(bottom=thin)
+            for j in range(len(self.j_slots)):
+                ws1.cell(row=j+3, column=i*self.j_sets + 2).border = styles.Border(left=thick)
+        for (i, row) in zip(itertools.count(1), ws1.rows):
+            for cell in row[:-1]:
+                cell.alignment = styles.Alignment(horizontal='center')
+                if i > 3 and i % 2 == 0:
+                    cell.fill = styles.PatternFill('solid', fgColor='DDDDDD')
+            row[0].alignment = styles.Alignment(horizontal='right')
 
         ws2 = wb.create_sheet("Competition Tables")
         ws2.append([''] + self.rooms[3][:2*self.t_pairs])
