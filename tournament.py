@@ -142,6 +142,7 @@ class Tournament:
                
     def export(self):
         wb = openpyxl.Workbook()
+        nobord = styles.Side(border_style='none', color='000000')
         thin = styles.Side(border_style='thin', color='000000')
         thick = styles.Side(border_style='thick', color='000000')
         
@@ -182,7 +183,29 @@ class Tournament:
         ws2.append([''] + self.rooms[3][:2*self.t_pairs])
         for (time, rd, teams) in self.t_slots:
             ws2.append([time.strftime('%-I:%M %p')] + ['None' if t is None else t for t in teams])
-        wb.save(self.tournament_name.lower().replace(' ', '_') + '_schedule.xlsx')
+        for (i, row) in zip(itertools.count(1), ws2.rows):
+            for cell in row:
+                cell.alignment = styles.Alignment(horizontal='center')
+                if i % 2 == 0:
+                    cell.fill = styles.PatternFill('solid', fgColor='DDDDDD')
+            row[0].alignment = styles.Alignment(horizontal='right')
+            for cell in row[1::2]:
+                cell.border = styles.Border(left=thick)
+        for (i, cell) in zip(itertools.count(1), next(ws2.rows)):
+            cell.font = styles.Font(bold=True)
+            cell.border = styles.Border(bottom=thin, left=(nobord if i % 2 else thick))
+        
+        saved = False
+        count = 0
+        while not saved:
+            outfpath = [self.tournament_name.lower().replace(' ', '_') + '_schedule', '.xlsx']
+            try:
+                wb.save((' ({})'.format(count) if count else '').join(outfpath))
+                saved = True
+            except PermissionError:
+                count += 1
+        print("file saved as", (' ({})'.format(count) if count else '').join(outfpath))
+
             
     def _team(self, team_num):
         return self.teams[team_num % self.num_teams]
