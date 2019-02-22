@@ -58,16 +58,20 @@ class Tournament:
         if self.j_calib:
             self.j_slots = [([0], [1], [2])] + self.j_slots
 
+        breaks = []
         time = self.j_start
         for timeslot in range(len(self.j_slots)):
-            if (timeslot - self.j_calib) % self.j_consec == 0 and 0 < timeslot < len(self.j_slots) - 1:
+            if (timeslot - self.j_calib) % self.j_consec == 0 and 0 < timeslot < len(self.j_slots) - 2:
                 time += self.j_break
+                breaks.append(timeslot)
             for cat in range(3):
                 for i in range(len(self.j_slots[timeslot][cat])):
                     self.teams[self.j_slots[timeslot][cat][i]]\
                             .add_event(time, self.j_duration_team, cat, i)
             self.j_slots[timeslot] = (time, list(self.j_slots[timeslot]))
             time += self.j_duration
+        for breaktime in breaks[::-1]:
+            self.j_slots.insert(breaktime, None)
 
         #table scheduling
         time_start = sum(self._team(3*self.j_calib).events[0][:2], self.travel)
@@ -76,7 +80,7 @@ class Tournament:
 
         round_split = [(0, 1), (2, 3)]
         run_rates = [3*self.j_sets*self.t_duration[0]/(self.j_duration + self.j_break/self.j_consec), None]
-        break_times = (None, self.t_lunch_duration)
+        break_times = (self.t_lunch_duration, None)
 
         min_early_run_rate = max(2, 2*math.ceil(run_rates[0]/2))
         if self.num_teams % min_early_run_rate:
@@ -101,7 +105,6 @@ class Tournament:
             run_rate = 2*math.ceil(run_rate/2)
             match_sizes = [max(2, run_rate - 2), run_rate]
 
-            time += (break_time if break_time else timedelta(0))
             team = next((t for t in range(team, team + self.num_teams) if
                         self._team(t).available(time, self.t_duration[rounds[0]], self.travel)))
             start_team = team
@@ -129,11 +132,14 @@ class Tournament:
                     self.t_slots += [(time, rd, timeslot)]
                     team += match_size
                     time += self.t_duration[rd]
+            if break_time is not None:
+                time += break_time
+                self.t_slots += [None]
     
     def assign_tables(self):
-        for (match_time, rd, teams) in self.t_slots:
+        for (time, rd, teams) in [x for x in self.t_slots if x is not None]:
             for i in [j for j in range(len(teams)) if teams[j] is not None]:
-                self._team(teams[i]).add_event(match_time, self.t_duration[rd], 3, i)
+                self._team(teams[i]).add_event(time, self.t_duration[rd], 3, i)
         for t in self.teams:
             rd = 0
             for event in [e for e in t.events if e[2] == 3]:
@@ -141,60 +147,11 @@ class Tournament:
                 rd += 1
                
     def export(self):
-        wb = openpyxl.Workbook()
-        nobord = styles.Side(border_style='none', color='000000')
-        thin = styles.Side(border_style='thin', color='000000')
-        thick = styles.Side(border_style='thick', color='000000')
-        
-        ws1 = wb.active
-        ws1.title = "Judging"
-        ws1.append(sum([[cat] + (self.j_sets - 1)*[''] for cat in self.event_names[:3]], ['']) + [''])
-        ws1.append(sum([cat[:self.j_sets] for cat in self.rooms[:3]], ['']))
-        for (time, teams) in self.j_slots:
-            line = [time.strftime('%-I:%M %p ')]
-            if self.j_calib and len(teams[0]) == 1:
-                for (team, area, rooms) in zip(sum(teams, []), self.event_names[:3], self.rooms[:3]):
-                    line += [team, "all {} judges in {}".format(area.lower(), rooms[0])]\
-                         + (self.j_sets - 2)*['']
-            else:
-                line += sum([t + ((self.j_sets - len(teams[0]))*['None']) for t in teams], [])
-            ws1.append(line)
-        for i in range(3):
-            for j in [1, 3] if self.j_calib else [1]:
-                ws1.merge_cells(start_row=j, start_column=i*self.j_sets + 2 + (j == 3),
-                                  end_row=j,   end_column=(i+1)*self.j_sets + 1)
-                cell = ws1.cell(row=j, column=(i*self.j_sets + 2))
-                cell.border = styles.Border(left=thick, right=thick)
-                if j == 1:
-                    cell.font = styles.Font(bold=True)
-            ws1.cell(row=2, column=i*self.j_sets + 2).border = styles.Border(left=thick, bottom=thin)
-            for j in range(1, self.j_sets):
-                ws1.cell(row=2, column=(i*self.j_sets + 2 + j)).border = styles.Border(bottom=thin)
-            for j in range(len(self.j_slots)):
-                ws1.cell(row=j+3, column=i*self.j_sets + 2).border = styles.Border(left=thick)
-        for (i, row) in zip(itertools.count(1), ws1.rows):
-            for cell in row[:-1]:
-                cell.alignment = styles.Alignment(horizontal='center')
-                if i > 3 and i % 2 == 0:
-                    cell.fill = styles.PatternFill('solid', fgColor='DDDDDD')
-            row[0].alignment = styles.Alignment(horizontal='right')
-
-        ws2 = wb.create_sheet("Competition Tables")
-        ws2.append([''] + self.rooms[3][:2*self.t_pairs])
-        for (time, rd, teams) in self.t_slots:
-            ws2.append([time.strftime('%-I:%M %p')] + ['None' if t is None else t for t in teams])
-        for (i, row) in zip(itertools.count(1), ws2.rows):
-            for cell in row:
-                cell.alignment = styles.Alignment(horizontal='center')
-                if i % 2 == 0:
-                    cell.fill = styles.PatternFill('solid', fgColor='DDDDDD')
-            row[0].alignment = styles.Alignment(horizontal='right')
-            for cell in row[1::2]:
-                cell.border = styles.Border(left=thick)
-        for (i, cell) in zip(itertools.count(1), next(ws2.rows)):
-            cell.font = styles.Font(bold=True)
-            cell.border = styles.Border(bottom=thin, left=(nobord if i % 2 else thick))
-        
+        wb = openpyxl.load_workbook(self.fpath)
+        del wb["Input Form"]
+        self._export_judging(wb.create_sheet("Judging"))
+        self._export_tables(wb.create_sheet("Competition Tables"))
+               
         saved = False
         count = 0
         while not saved:
@@ -206,7 +163,72 @@ class Tournament:
                 count += 1
         print("file saved as", (' ({})'.format(count) if count else '').join(outfpath))
 
-            
+    def _export_judging(self, ws):
+        thin = styles.Side(border_style='thin', color='000000')
+        thick = styles.Side(border_style='thick', color='000000')
+
+        ws.title = "Judging"
+        ws.append(sum([[cat] + (self.j_sets - 1)*[''] for cat in self.event_names[:3]], ['']) + [''])
+        ws.append(sum([cat[:self.j_sets] for cat in self.rooms[:3]], ['']))
+        for slot in self.j_slots:
+            try:
+                time, teams = slot
+                team_nums = [[self.teams[t].num for t in cat] for cat in teams]
+                line = [time.strftime('%-I:%M %p ')]
+                if self.j_calib and len(teams[0]) == 1:
+                    for (team, area, rooms) in zip(sum(team_nums, []), self.event_names[:3], self.rooms[:3]):
+                        line += [team, "all {} judges in {}".format(area.lower(), rooms[0])]\
+                                + (self.j_sets - 2)*['']
+                else:
+                    line += sum([t + ((self.j_sets - len(team_nums[0]))*['None']) for t in team_nums], [])
+                ws.append(line)
+            except TypeError:
+                ws.append([''])
+        for i in range(3):
+            for j in [1, 3] if self.j_calib else [1]:
+                ws.merge_cells(start_row=j, start_column=i*self.j_sets + 2 + (j == 3),
+                                 end_row=j,   end_column=(i+1)*self.j_sets + 1)
+                cell = ws.cell(row=j, column=(i*self.j_sets + 2))
+                cell.border = styles.Border(left=thick, right=thick)
+                if j == 1:
+                    cell.font = styles.Font(bold=True)
+            ws.cell(row=2, column=i*self.j_sets + 2).border = styles.Border(left=thick, bottom=thin)
+            for j in range(1, self.j_sets):
+                ws.cell(row=2, column=(i*self.j_sets + 2 + j)).border = styles.Border(bottom=thin)
+            for j in range(len(self.j_slots)):
+                ws.cell(row=j+3, column=i*self.j_sets + 2).border = styles.Border(left=thick)
+        for (i, row) in zip(itertools.count(1), ws.rows):
+            for cell in row[:-1]:
+                cell.alignment = styles.Alignment(horizontal='center')
+                if i > 3 and i % 2 == 0:
+                    cell.fill = styles.PatternFill('solid', fgColor='DDDDDD')
+            row[0].alignment = styles.Alignment(horizontal='right')
+
+    def _export_tables(self, ws):
+        nobord = styles.Side(border_style='none', color='000000')
+        thin = styles.Side(border_style='thin', color='000000')
+        thick = styles.Side(border_style='thick', color='000000')
+
+        ws.append([''] + self.rooms[3][:2*self.t_pairs])
+        for slot in self.t_slots:
+            try:
+                (time, rd, teams) = slot
+                ws.append([time.strftime('%-I:%M %p')] + ['None' if t is None else
+                                                    self.teams[t].num for t in teams])
+            except TypeError:
+                ws.append([''])
+        for (i, row) in zip(itertools.count(1), ws.rows):
+            for cell in row:
+                cell.alignment = styles.Alignment(horizontal='center')
+                if i % 2 == 0:
+                    cell.fill = styles.PatternFill('solid', fgColor='DDDDDD')
+            row[0].alignment = styles.Alignment(horizontal='right')
+            for cell in row[1::2]:
+                cell.border = styles.Border(left=thick)
+        for (i, cell) in zip(itertools.count(1), next(ws.rows)):
+            cell.font = styles.Font(bold=True)
+            cell.border = styles.Border(bottom=thin, left=(nobord if i % 2 else thick))
+    
     def _team(self, team_num):
         return self.teams[team_num % self.num_teams]
 

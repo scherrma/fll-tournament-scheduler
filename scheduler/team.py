@@ -3,7 +3,7 @@ import datetime
 
 class Team:
     def __init__(self, num, name):
-        self.num = str(num)
+        self.num = int(num)
         self.name = name
         self.events = []
 
