@@ -42,7 +42,7 @@ class Tournament:
             self.export()
 
         except Exception as e:
-            raise e
+            #raise e
             print(e)
             if sys.platform == "win32":
                 os.system("pause")
@@ -147,15 +147,18 @@ class Tournament:
                 rd += 1
                
     def export(self):
+        time_fmt_str = ('%#I:%M %p' if sys.platform == "win32" else '%-I:%M %p')
         wb = openpyxl.load_workbook(self.fpath)
         del wb["Input Form"]
-        self._export_judging(wb.create_sheet("Judging"))
-        self._export_tables(wb.create_sheet("Competition Tables"))
+        self._export_judging(wb.create_sheet("Judging"), time_fmt_str)
+        self._export_tables(wb.create_sheet("Competition Tables"), time_fmt_str)
+        self._export_team_view(wb.create_sheet("Team View"), time_fmt_str)
                
         saved = False
         count = 0
         while not saved:
-            outfpath = [self.tournament_name.lower().replace(' ', '_') + '_schedule', '.xlsx']
+            outfpath = [os.path.join(os.path.dirname(self.fpath), 
+                self.tournament_name.lower().replace(' ', '_') + '_schedule'), '.xlsx']
             try:
                 wb.save((' ({})'.format(count) if count else '').join(outfpath))
                 saved = True
@@ -163,7 +166,7 @@ class Tournament:
                 count += 1
         print("file saved as", (' ({})'.format(count) if count else '').join(outfpath))
 
-    def _export_judging(self, ws):
+    def _export_judging(self, ws, time_fmt_str):
         thin = styles.Side(border_style='thin', color='000000')
         thick = styles.Side(border_style='thick', color='000000')
 
@@ -174,7 +177,7 @@ class Tournament:
             try:
                 time, teams = slot
                 team_nums = [[self.teams[t].num for t in cat] for cat in teams]
-                line = [time.strftime('%-I:%M %p ')]
+                line = [time.strftime(time_fmt_str)]
                 if self.j_calib and len(teams[0]) == 1:
                     for (team, area, rooms) in zip(sum(team_nums, []), self.event_names[:3], self.rooms[:3]):
                         line += [team, "all {} judges in {}".format(area.lower(), rooms[0])]\
@@ -203,8 +206,11 @@ class Tournament:
                 if i > 3 and i % 2 == 0:
                     cell.fill = styles.PatternFill('solid', fgColor='DDDDDD')
             row[0].alignment = styles.Alignment(horizontal='right')
+        for col in ws.columns:
+            length = max(9, max(len(str(cell.value)) for cell in [col[1]] + list(col[3:])))
+            ws.column_dimensions[openpyxl.utils.get_column_letter(col[0].column)].width = length
 
-    def _export_tables(self, ws):
+    def _export_tables(self, ws, time_fmt_str):
         nobord = styles.Side(border_style='none', color='000000')
         thin = styles.Side(border_style='thin', color='000000')
         thick = styles.Side(border_style='thick', color='000000')
@@ -213,7 +219,7 @@ class Tournament:
         for slot in self.t_slots:
             try:
                 (time, rd, teams) = slot
-                ws.append([time.strftime('%-I:%M %p')] + ['None' if t is None else
+                ws.append([time.strftime(time_fmt_str)] + ['None' if t is None else
                                                     self.teams[t].num for t in teams])
             except TypeError:
                 ws.append([''])
@@ -228,6 +234,22 @@ class Tournament:
         for (i, cell) in zip(itertools.count(1), next(ws.rows)):
             cell.font = styles.Font(bold=True)
             cell.border = styles.Border(bottom=thin, left=(nobord if i % 2 else thick))
+        for col in ws.columns:
+            length = 1.2*max(len(str(cell.value)) for cell in col)
+            ws.column_dimensions[openpyxl.utils.get_column_letter(col[0].column)].width = length
+    
+    def _export_team_view(self, ws, time_fmt_str):
+        ws.append(['Team Number', 'Team Name'] + ['Event {}'.format(i + 1) 
+                            for i in range(len(self.teams[0].events))])
+        for team in self.teams:
+            ws.append([team.num, team.name] + ['{} at {} in {}'.format(self.event_names[min(3, cat)], 
+                time.strftime(time_fmt_str), self.rooms[min(3, cat)][loc]) 
+                for (time, duration, cat, loc) in team.events])
+        for cell in next(ws.rows):
+            cell.font = styles.Font(bold=True)
+        for col in ws.columns:
+            length = 1.2*max(len(str(cell.value)) for cell in col)
+            ws.column_dimensions[openpyxl.utils.get_column_letter(col[0].column)].width = length
     
     def _team(self, team_num):
         return self.teams[team_num % self.num_teams]
