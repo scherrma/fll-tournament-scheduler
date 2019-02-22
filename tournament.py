@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 import pandas as pd
 import math
+import numpy as np
 from datetime import datetime, timedelta
 from scheduler.team import Team
 import scheduler.util as util
 
-import xlrd
+import openpyxl
 
 import tkinter
 from tkinter import filedialog
@@ -36,13 +37,10 @@ class Tournament:
             else:
                 raise ValueError(self.scheduling_method + " scheduling is not supported")
             self.assign_tables()
-
-            #for match in self.t_slots:
-            #    print('{}: {}'.format(match[0].strftime('%r'), match[2]))
             self.export()
 
         except Exception as e:
-            #raise e
+            raise e
             print(e)
             if sys.platform == "win32":
                 os.system("pause")
@@ -66,6 +64,7 @@ class Tournament:
                 for i in range(len(self.j_slots[timeslot][cat])):
                     self.teams[self.j_slots[timeslot][cat][i]]\
                             .add_event(time, self.j_duration_team, cat, i)
+            self.j_slots[timeslot] = (time, list(self.j_slots[timeslot]))
             time += self.j_duration
 
         #table scheduling
@@ -120,12 +119,12 @@ class Tournament:
                         // self.t_duration[rd]
 
                 for match_size in util.sum_to(match_sizes, max_teams, max_matches):
-                    timeslot = list(range(team, team + match_size))
+                    timeslot = [i % self.num_teams for i in range(team, team + match_size)]
                     if match_size < match_sizes[-1]:
                         timeslot[t_idle:t_idle] = (match_sizes[-1] - match_size)*[None]
                         t_idle = (t_idle + 2) % match_sizes[-1]
-                    self.t_slots += [(time, rd, [(t % self.num_teams if t is not None else None) 
-                                                                        for t in timeslot])]
+                    timeslot += (2*self.t_pairs - match_sizes[-1])*[None]
+                    self.t_slots += [(time, rd, timeslot)]
                     team += match_size
                     time += self.t_duration[rd]
     
@@ -140,11 +139,26 @@ class Tournament:
                 rd += 1
                
     def export(self):
-        longest_name = max([len(str(team)) for team in self.teams])
-        for team in self.teams:
-            print("{:<{}}   (closest: {})".format(str(team), longest_name, team.closest()))
-            print(''.join(['\t{} - {} ({})\n'.format(time.strftime('%r'), self.event_names[cat], 
-                            self.rooms[min(cat, 3)][loc]) for (time, dur, cat, loc) in team.events]))
+        wb = openpyxl.Workbook()
+        ws1 = wb.active
+
+        ws1.title = "Judging"
+        ws1.append(sum([[cat] + (self.j_sets - 1)*[''] for cat in self.event_names[:3]], ['']))
+        ws1.append(sum([cat[:self.j_sets] for cat in self.rooms[:3]], ['']))
+        for (time, teams) in self.j_slots:
+            line = sum([t + ((self.j_sets - len(teams[0]))*['None']) for t in teams], 
+                    [time.strftime('%-I:%M %p')])
+            ws1.append(line)
+        for j in [1, 3] if self.j_calib else [1]:
+            for i in range(3):
+                ws1.merge_cells(start_row=j, start_column=(i*self.j_sets + 2),
+                                  end_row=j,   end_column=((i+1)*self.j_sets + 1))
+
+        ws2 = wb.create_sheet("Competition Tables")
+        ws2.append([''] + self.rooms[3][:2*self.t_pairs])
+        for (time, rd, teams) in self.t_slots:
+            ws2.append([time.strftime('%-I:%M %p')] + ['None' if t is None else t for t in teams])
+        wb.save(self.tournament_name.lower().replace(' ', '_') + '_schedule.xlsx')
             
     def _team(self, team_num):
         return self.teams[team_num % self.num_teams]
@@ -152,17 +166,17 @@ class Tournament:
     def read_data(self, fpath):
         dfs = pd.read_excel(fpath, sheet_name=["Team Information", "Input Form"])
 
-        team_sheet = dfs["Team Information"]
-        if all([x in team_sheet.columns for x in ("Team Number", "Team")]):
-            self.teams = [Team(*x) for x in team_sheet.loc[:, ("Team Number", "Team")].values]
+        self.team_sheet = dfs["Team Information"]
+        if all([x in self.team_sheet.columns for x in ("Team Number", "Team")]):
+            self.teams = [Team(*x) for x in self.team_sheet.loc[:, ("Team Number", "Team")].values]
         else:
             raise KeyError("Could not find columns 'Team Number' and 'Team' in sheet 'Team Information'")
 
         param_sheet = dfs["Input Form"]
         if any([x not in param_sheet.columns for x in ("key", "answer")]):
             raise KeyError("Could not find columns 'key' and 'answer' in sheet 'Input Form'")
-        param_sheet = param_sheet.set_index("key")
-        param = dict(param_sheet.loc[:, "answer"].items())
+        self.param_sheet = param_sheet.set_index("key")
+        param = dict(self.param_sheet.loc[:, "answer"].items())
 
         self.num_teams = len(self.teams)
         try:
@@ -170,10 +184,10 @@ class Tournament:
             self.scheduling_method = param["scheduling_method"]
             self.travel = timedelta(minutes=param["travel_time"])
             self.event_names = ['Project', 'Robot Design', 'Core Values']\
-                             + param_sheet.loc["t_round_names"].dropna().values.tolist()[1:]
-            self.rooms = [param_sheet.loc[key].dropna().values.tolist()[1:]
+                             + self.param_sheet.loc["t_round_names"].dropna().values.tolist()[1:]
+            self.rooms = [self.param_sheet.loc[key].dropna().values.tolist()[1:]
                          for key in ("j_project_rooms", "j_robot_rooms", "j_values_rooms")]
-            self.rooms += [sum([[tbl + ' A', tbl + ' B'] for tbl in param_sheet.loc["t_pair_names"]
+            self.rooms += [sum([[tbl + ' A', tbl + ' B'] for tbl in self.param_sheet.loc["t_pair_names"]
                                 .dropna().values.tolist()[1:]], [])]
             
             self.j_start = datetime(1, 1, 1, param["j_start"].hour, param["j_start"].minute)
@@ -189,7 +203,7 @@ class Tournament:
             self.t_pairs = param["t_pairs"]
             self.t_rounds = len(self.event_names[-1])
             self.t_duration = [timedelta(minutes=x) for x in 
-                param_sheet.loc["t_durations"].dropna().values.tolist()[1:]]
+                self.param_sheet.loc["t_durations"].dropna().values.tolist()[1:]]
             self.t_lunch = datetime(1, 1, 1, param["t_lunch"].hour, param["t_lunch"].minute)
             self.t_lunch_duration = timedelta(minutes=param["t_lunch_duration"])
             
