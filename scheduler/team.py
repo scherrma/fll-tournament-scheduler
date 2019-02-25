@@ -2,9 +2,10 @@
 import datetime
 
 class Team:
-    def __init__(self, num, name):
+    def __init__(self, num, name, div=None):
         self.num = int(num)
         self.name = name
+        self.div = div
         self.events = []
 
     def __str__(self):
@@ -12,6 +13,9 @@ class Team:
 
     def __repr__(self):
         return str(self)
+
+    def info(self, with_div=False):
+        return [self.num] + with_div*[self.div] + [self.name]
 
     def add_event(self, start_time, duration, name, loc):
         self.events.append([start_time, duration, name, loc])

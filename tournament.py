@@ -151,11 +151,15 @@ class Tournament:
                
     def export(self):
         time_fmt_str = ('%#I:%M %p' if sys.platform == "win32" else '%-I:%M %p')
+        team_width = 3 if self.divisions else 2
         wb = openpyxl.load_workbook(self.fpath)
-        del wb["Input Form"]
+
+        for sheet in [ws for ws in wb.sheetnames if ws != 'Team Information']:
+            del wb[sheet]
+
         self._export_judge_views(wb, time_fmt_str)
-        self._export_table_views(wb, time_fmt_str)
-        self._export_team_views(wb, time_fmt_str)
+        self._export_table_views(wb, time_fmt_str, team_width)
+        self._export_team_views(wb, time_fmt_str, team_width)
         wb._sheets = wb._sheets[1:] + wb._sheets[:1]
                
         saved = False
@@ -224,53 +228,55 @@ class Tournament:
                                      end_row=3,   end_column=1 + (i + 1)*2*self.j_sets)
             self._basic_ws_format(ws, 4)
 
-    def _export_table_views(self, wb, time_fmt_str):
+    def _export_table_views(self, wb, time_fmt_str, team_width):
         nobord = styles.Side(border_style='none', color='000000')
         thin = styles.Side(border_style='thin', color='000000')
         thick = styles.Side(border_style='thick', color='000000')
 
         ws_overall = wb.create_sheet("Competition Tables")
-        ws_overall.append([val for pair in zip(2*self.t_pairs*[''], self.rooms[3][:2*self.t_pairs]) 
-                   for val in pair])
+        header = sum([[tbl] + (team_width - 1)*[''] for tbl in self.rooms[3]], [''])
+        ws_overall.append(header)
         t_pair_sheets = [wb.create_sheet(room[:-2]) for room in self.rooms[3][:2*self.t_pairs:2]]
         for t_pair in range(self.t_pairs):
-            t_pair_sheets[t_pair].append([''] + [self.rooms[3][2*t_pair]] 
-                                       + [''] + [self.rooms[3][2*t_pair + 1]])
+            t_pair_sheets[t_pair].append([''] + header[team_width*t_pair + 1: team_width*(t_pair + 2)])
 
         for slot in self.t_slots:
             if slot is None:
                 for ws in t_pair_sheets + [ws_overall]:
                     ws.append([''])
             else:
-                line = sum([['None', ''] if t is None else [self.teams[t].num, self.teams[t].name]
-                    for t in slot[2]], [slot[0].strftime(time_fmt_str)])
+                line = sum([(team_width - 1)*[''] + ['None'] if t is None else 
+                    self.teams[t].info(self.divisions) for t in slot[2]], [slot[0].strftime(time_fmt_str)])
                 ws_overall.append(line)
                 for t_pair in range(self.t_pairs):
-                    t_pair_sheets[t_pair].append([line[0]] + line[4*t_pair + 1: 4*t_pair + 5])
+                    t_pair_sheets[t_pair].append([line[0]] + 
+                            line[2*team_width*t_pair + 1:2*team_width*(t_pair + 1) + 1])
 
         for ws in [ws_overall] + t_pair_sheets:
             for row in ws.rows:
                 for cell in row:
                     cell.alignment = styles.Alignment(horizontal='center')
-                    if cell.column % 4 == 0:
-                        cell.border = styles.Border(left=thin)
-                    if cell.column % 4 == 2:
+                    if (cell.column - 2) % (2*team_width) == 0:
                         cell.border = styles.Border(left=thick)
+                    elif (cell.column - 2) % (2*team_width) == team_width:
+                        cell.border = styles.Border(left=thin)
                 row[0].alignment = styles.Alignment(horizontal='right')
-            self._basic_ws_format(ws)
+            for i in range(2, len(list(ws.columns)), team_width):
+                ws.merge_cells(start_row=1, start_column=i, end_row=1, end_column=i + team_width - 1)
+            self._basic_ws_format(ws, 2)
     
-    def _export_team_views(self, wb, time_fmt_str):
+    def _export_team_views(self, wb, time_fmt_str, team_width):
         ws_chron = wb.create_sheet("Team View (Chronological)")
         ws_event = wb.create_sheet("Team View (Event)")
-        ws_chron.append(['Team Number', 'Team Name'] + ['Event {}'.format(i + 1) 
-                            for i in range(len(self.teams[0].events))])
-        ws_event.append(['Team Number', 'Team Name'] + self.event_names)
+        team_header = ['Team Number'] + (['Division'] if self.divisions else []) + ['Team Name']
+        ws_chron.append(team_header + ['Event {}'.format(i + 1) for i in range(len(self.event_names))])
+        ws_event.append(team_header + self.event_names)
         
-        for team in self.teams:
-            ws_chron.append([team.num, team.name] + ['{} at {}, {}'.format(self.event_names[min(3, cat)], 
+        for team in sorted(self.teams, key=lambda t: t.num):
+            ws_chron.append(team.info(self.divisions) + ['{} at {}, {}'.format(self.event_names[cat], 
                 time.strftime(time_fmt_str), self.rooms[min(3, cat)][loc]) 
                 for (time, duration, cat, loc) in team.events])
-            ws_event.append([team.num, team.name] + ['{}, {}'.format(time.strftime(time_fmt_str),
+            ws_event.append(team.info(self.divisions) + ['{}, {}'.format(time.strftime(time_fmt_str),
                 self.rooms[min(3, cat)][loc]) for (time, duration, cat, loc) 
                 in sorted(team.events, key=lambda x: x[2])])
 
@@ -294,8 +300,12 @@ class Tournament:
         dfs = pd.read_excel(fpath, sheet_name=["Team Information", "Input Form"])
 
         self.team_sheet = dfs["Team Information"]
-        if all([x in self.team_sheet.columns for x in ("Team Number", "Team")]):
-            self.teams = [Team(*x) for x in self.team_sheet.loc[:, ("Team Number", "Team")].values]
+        column_check = ["Team Number", "Team"]
+        if all([x in self.team_sheet.columns for x in column_check]):
+            self.divisions = ("Division" in self.team_sheet.columns)
+            if self.divisions:
+                column_check += ["Division"]
+            self.teams = [Team(*x) for x in self.team_sheet.loc[:, column_check].values]
         else:
             raise KeyError("Could not find columns 'Team Number' and 'Team' in sheet 'Team Information'")
 
