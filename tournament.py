@@ -157,7 +157,7 @@ class Tournament:
         for sheet in [ws for ws in wb.sheetnames if ws != 'Team Information']:
             del wb[sheet]
 
-        self._export_judge_views(wb, time_fmt_str)
+        self._export_judge_views(wb, time_fmt_str, team_width)
         self._export_table_views(wb, time_fmt_str, team_width)
         self._export_team_views(wb, time_fmt_str, team_width)
         wb._sheets = wb._sheets[1:] + wb._sheets[:1]
@@ -174,18 +174,25 @@ class Tournament:
                 count += 1
         print("file saved as", (' ({})'.format(count) if count else '').join(outfpath))
 
-    def _export_judge_views(self, wb, time_fmt_str):
+    def _export_judge_views(self, wb, time_fmt_str, team_width):
         thin = styles.Side(border_style='thin', color='000000')
         thick = styles.Side(border_style='thick', color='000000')
 
         ws_overall = wb.create_sheet("Judging Rooms")
-        ws_overall.append(sum([[cat] + (2*self.j_sets - 1)*[''] for cat in self.event_names[:3]], ['']))
-        ws_overall.append(sum([['', room] for room in sum(self.rooms[:3], [])], []))
-
         cat_sheets = [wb.create_sheet(cat) for cat in self.event_names[:3]]
+
+        header_total, rooms_total = [], []
         for i in range(3):
-            cat_sheets[i].append([''] + [self.event_names[i]])
-            cat_sheets[i].append(sum([['', room] for room in self.rooms[i]], []))
+            header_part = [self.event_names[i]] + (self.j_sets*team_width - 1)*['']
+            rooms_part = sum([[room] + (team_width - 1)*[''] for room in self.rooms[i]], [])
+            
+            header_total += header_part
+            rooms_total += rooms_part
+            
+            cat_sheets[i].append([''] + header_part)
+            cat_sheets[i].append([''] + rooms_part)
+        ws_overall.append([''] + header_total)
+        ws_overall.append([''] + rooms_total)
 
         for slot in self.j_slots:
             if slot is None:
@@ -195,37 +202,40 @@ class Tournament:
                 time, teams = slot[0], [[None if t is None else self.teams[t] for t in cat] 
                                         for cat in slot[1]]
                 if len(teams[0]) == 1 and self.j_calib:
-                    line = sum([[teams[i][0].num, teams[i][0].name, "all {} judges in {}".format(
-                        self.event_names[i], self.rooms[i][0])] + (2*self.j_sets - 3)*[''] for i 
-                        in range(3)], [time.strftime(time_fmt_str)])
+                    line = sum([teams[i][0].info(self.divisions) + ["all {} judges in {}".format(
+                        self.event_names[i].lower(), self.rooms[i][0])] + 
+                        (team_width*(self.j_sets - 1) - 1)*[''] 
+                        for i in range(3)], [time.strftime(time_fmt_str)])
                 else:
-                    line = [time.strftime(time_fmt_str)] + sum([['', 'None'] if team is None 
-                        else [team.num, team.name] for cat in teams for team in cat], [])
+                    line = sum([['']*(team_width - 1) + ['None'] if team is None else 
+                        team.info(self.divisions) for cat in teams for team in cat], 
+                        [time.strftime(time_fmt_str)])
                 ws_overall.append(line)
                 for i in range(3):
-                        cat_sheets[i].append([line[0]] + line[2*i*self.j_sets + 1:
-                                                              2*(i + 1)*self.j_sets + 1]) 
+                        cat_sheets[i].append([line[0]] + line[i*team_width*self.j_sets + 1:
+                                                              (i + 1)*team_width*self.j_sets + 1]) 
+
 
         for ws in [ws_overall] + cat_sheets:
             for row in ws.rows:
                 for cell in row:
                     cell.alignment = styles.Alignment(horizontal='center')
-                    if cell.column % (2*self.j_sets) == 2:
+                    if (cell.column - 2) % (team_width*self.j_sets) == 0:
                         cell.border = styles.Border(left=thick)
-                    elif cell.column % 2 == 0 and cell.row > (3 if self.j_calib else 1):
+                    elif (cell.column - 2) % team_width == 0 and cell.row > (3 if self.j_calib else 1):
                         cell.border = styles.Border(left=thin)
                 row[0].alignment = styles.Alignment(horizontal='right')
                 
-            for i in range((len(list(ws.columns)) - 1) // (2*self.j_sets)):
-                ws.cell(row=1, column=2*self.j_sets*i + 2).font = styles.Font(bold=True)
-                ws.merge_cells(start_row=1, start_column=2 + i*2*self.j_sets,
-                                 end_row=1,   end_column=1 + (i + 1)*2*self.j_sets)
+            for i in range((len(list(ws.columns)) - 1) // (team_width*self.j_sets)):
+                ws.cell(row=1, column=team_width*self.j_sets*i + 2).font = styles.Font(bold=True)
+                ws.merge_cells(start_row=1, start_column=2 + i*team_width*self.j_sets,
+                                 end_row=1,   end_column=1 + (i + 1)*team_width*self.j_sets)
                 for j in range(self.j_sets):
-                    ws.merge_cells(start_row=2, start_column=2*(self.j_sets*i + j + 1),
-                                     end_row=2,   end_column=2*(self.j_sets*i + j + 1) + 1)
+                    ws.merge_cells(start_row=2, start_column=team_width*(self.j_sets*i + j) + 2,
+                                     end_row=2,   end_column=team_width*(self.j_sets*i + j + 1) + 1)
                 if self.j_calib:
-                    ws.merge_cells(start_row=3, start_column=4 + i*2*self.j_sets,
-                                     end_row=3,   end_column=1 + (i + 1)*2*self.j_sets)
+                    ws.merge_cells(start_row=3, start_column=2 + team_width*(self.j_sets*i + 1),
+                                     end_row=3,   end_column=1 + team_width*(self.j_sets*(i + 1)))
             self._basic_ws_format(ws, 4)
 
     def _export_table_views(self, wb, time_fmt_str, team_width):
@@ -256,7 +266,7 @@ class Tournament:
             for row in ws.rows:
                 for cell in row:
                     cell.alignment = styles.Alignment(horizontal='center')
-                    if (cell.column - 2) % (2*team_width) == 0:
+                    if (cell.column - 2) % (2*team_width) == 2:
                         cell.border = styles.Border(left=thick)
                     elif (cell.column - 2) % (2*team_width) == team_width:
                         cell.border = styles.Border(left=thin)

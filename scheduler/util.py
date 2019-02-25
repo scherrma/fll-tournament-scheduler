@@ -26,3 +26,6 @@ def sum_to(options, goal, picks):
             picks -= 1
             goal -= select[-1]
     return select
+
+def rpad(ls, padding, final_len):
+    return ls + (final_len - len(ls))*[padding]
