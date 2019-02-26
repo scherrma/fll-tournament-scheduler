@@ -51,31 +51,25 @@ class Tournament:
         #judge slot scheduling
         rot_dir = 1 if (3*self.j_calib - self.num_teams) % 3 is 1 else -1
         self.j_slots = [sum([list(range((j + i*rot_dir) % 3, self.num_teams, 3))
-                            for i in range(3)], []) for j in range(3)]
-        self.j_slots = list(zip(*[util.chunks(l[self.j_calib:], self.j_sets) 
-                                      for l in self.j_slots]))
+            for i in range(3)], [])[self.j_calib:] for j in range(3)]
+        self.j_slots = list(zip(*[util.chunks(l + (-len(l) % self.j_sets)*[None], self.j_sets) 
+            for l in self.j_slots]))
         if self.j_calib:
             self.j_slots = [([0], [1], [2])] + self.j_slots
 
-        breaks = []
-        time = self.j_start
-        for timeslot in range(len(self.j_slots)):
-            if (timeslot - self.j_calib) % self.j_consec == 0 and 0 < timeslot < len(self.j_slots) - 2:
-                time += self.j_break
-                breaks.append(timeslot)
-            for cat in range(3):
-                for i in range(len(self.j_slots[timeslot][cat])):
-                    self.teams[self.j_slots[timeslot][cat][i]]\
-                            .add_event(time, self.j_duration_team, cat, i)
-            self.j_slots[timeslot] = (time, list(self.j_slots[timeslot]))
-            time += self.j_duration
-        for (time, areas) in self.j_slots[self.j_calib:]:
-            for area in areas:
-                area += (self.j_sets - len(area)) * [None]
-        for breaktime in breaks[::-1]:
+        breaks = [0] + [i if i + 1 < len(self.j_slots) else len(self.j_slots) for i in 
+                range(self.j_calib, 1 + len(self.j_slots), self.j_consec)]
+        timeslots = [self.j_start + bool(j and self.j_calib)*self.travel + max(i - 1, 0)*self.j_break 
+                + j*self.j_duration for i in range(len(breaks) - 1) for j in range(*breaks[i:i + 2])]
+        self.j_slots = list(zip(timeslots, self.j_slots))
+        for time, teams in self.j_slots:
+            for cat, cat_teams in zip(range(3), teams):
+                for room, t in zip(range(self.j_sets), cat_teams):
+                    if t is not None:
+                        self.teams[t].add_event(time, self.j_duration_team, cat, room)
+        for breaktime in breaks[-2:0:-1]:
             self.j_slots.insert(breaktime, None)
         
-
         #table scheduling
         time_start = sum(self._team(3*self.j_calib).events[0][:2], self.travel)
         team_idx = next((t for t in range(3*self.j_calib + 1) if
@@ -215,8 +209,7 @@ class Tournament:
                         cat_sheets[i].append([line[0]] + line[i*team_width*self.j_sets + 1:
                                                               (i + 1)*team_width*self.j_sets + 1]) 
 
-
-        for ws in [ws_overall] + cat_sheets:
+        for ws in [ws_overall] + cat_sheets: #formatting
             for row in ws.rows:
                 for cell in row:
                     cell.alignment = styles.Alignment(horizontal='center')
