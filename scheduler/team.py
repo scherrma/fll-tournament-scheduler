@@ -9,7 +9,7 @@ class Team:
         self.events = []
 
     def __str__(self):
-        return "Team " + self.num + " " + self.name
+        return "Team " + str(self.num) + " " + str(self.name)
 
     def __repr__(self):
         return str(self)

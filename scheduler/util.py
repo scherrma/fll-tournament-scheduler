@@ -26,3 +26,12 @@ def sum_to(options, goal, picks):
             picks -= 1
             goal -= select[-1]
     return select
+
+def nth_occurance(ls, val, n):
+    i = -1
+    for j in range(n):
+        i = ls.index(val, i + 1)
+    return i
+
+def rpad(ls, size, val):
+    return ls + (size - len(ls))*[val]

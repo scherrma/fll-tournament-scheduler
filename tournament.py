@@ -14,6 +14,8 @@ from tkinter import filedialog
 import sys
 import os
 
+from termcolor import colored
+
 class Tournament:
     def __init__(self):
         if len(sys.argv) == 1:
@@ -30,6 +32,7 @@ class Tournament:
     def schedule(self):
         try:
             self.read_data(self.fpath)
+            self.split_divisions()
 
             if self.scheduling_method == "Interlaced":
                 self.schedule_interlaced()
@@ -48,14 +51,56 @@ class Tournament:
             raise SystemExit
     
     def schedule_interlaced(self):
-        #judge slot scheduling
-        rot_dir = 1 if (3*self.j_calib - self.num_teams) % 3 is 1 else -1
-        self.j_slots = [sum([list(range((j + i*rot_dir) % 3, self.num_teams, 3))
-            for i in range(3)], [])[self.j_calib:] for j in range(3)]
-        self.j_slots = list(zip(*[util.chunks(l + (-len(l) % self.j_sets)*[None], self.j_sets) 
-            for l in self.j_slots]))
+        self.j_calib = self.j_calib and not self.divisions
+
+        max_room = max([math.ceil(len(teams) / rooms) for teams, rooms in self.divs])
+        most_rooms = max([rooms for teams, rooms in self.divs])
+        
+        pick_order = math.ceil(max_room / 3)*[val for div_picks in 
+                zip(*[rooms*[i] + (most_rooms - rooms)*[None] for i, (tms, rooms) in enumerate(self.divs)]) 
+                for val in 3*div_picks if val is not None]
+
+        for i, (teams, rooms) in enumerate(self.divs):
+            last_team = util.nth_occurance(pick_order, i, len(teams))
+            pick_order = pick_order[:last_team + 1] + [x for x in pick_order[last_team + 1:] if x != i]
+        
+        excess = min([-len(teams) % 3 for teams, rooms in self.divs if 
+            math.ceil(len(teams) / rooms) == max_room])
+        div_teams = [util.rpad([i for i, j in enumerate(pick_order) if j == div],
+            3*math.ceil(max_room/3)*rooms - excess, None) for div, (teams, rooms) in enumerate(self.divs)]
+
+        team_order = [list(zip(*x)) for x in list(zip(div_teams, [teams for teams, rooms in self.divs]))]
+        self.teams = [team for idx, team in sorted(sum(team_order, []))]
+        
+        self.j_slots = [[], [], []]
+        for teams, (team_names, rooms) in zip(div_teams, self.divs):
+            rot_dir = 1 if (3*self.j_calib - len(teams)) % 3 is 1 else -1
+            tmp = [sum([teams[(j + i*rot_dir) % 3 : len(teams) : 3] for i in range(3)], [])[self.j_calib:]
+                    for j in range(3)]
+            for i in range(3):
+                self.j_slots[i] += [tmp[i][j::rooms] for j in range(rooms)]
+        self.j_slots = [[util.rpad(room, max_room, None) for room in cat] for cat in self.j_slots]
+        self.j_slots = list(zip(*[list(zip(*cat)) for cat in self.j_slots]))
         if self.j_calib:
             self.j_slots = [([0], [1], [2])] + self.j_slots
+        print('\n'.join(map(str, self.j_slots)))
+
+
+        #for time in zip(*self.j_slots):
+        #    print('|'.join([''.join([colored('{:^8}'.format('-' if i is None else i), 'white' if i is None 
+        #        else ('cyan' if self.teams[i].div is 1 else 'green')) for i in cat]) for cat in time]))
+
+        #raise SystemExit
+
+        #judge slot scheduling
+        #self.j_calib = self.j_calib and not self.divisions
+        #rot_dir = 1 if (3*self.j_calib - self.num_teams) % 3 is 1 else -1
+        #self.j_slots = [sum([list(range((j + i*rot_dir) % 3, self.num_teams, 3))
+        #    for i in range(3)], [])[self.j_calib:] for j in range(3)]
+        #self.j_slots = list(zip(*[util.chunks(l + (-len(l) % self.j_sets)*[None], self.j_sets) 
+        #    for l in self.j_slots]))
+        #if self.j_calib:
+        #    self.j_slots = [([0], [1], [2])] + self.j_slots
 
         breaks = [0] + [i if i + 1 < len(self.j_slots) else len(self.j_slots) for i in 
                 range(self.j_calib, 1 + len(self.j_slots), self.j_consec)]
@@ -63,13 +108,15 @@ class Tournament:
                 + j*self.j_duration for i in range(len(breaks) - 1) for j in range(*breaks[i:i + 2])]
         self.j_slots = list(zip(timeslots, self.j_slots))
         for time, teams in self.j_slots:
-            for cat, cat_teams in zip(range(3), teams):
-                for room, t in zip(range(self.j_sets), cat_teams):
-                    if t is not None:
-                        self.teams[t].add_event(time, self.j_duration_team, cat, room)
+            for cat, cat_teams in enumerate(teams):
+                for room, t in [(x, y) for (x, y) in enumerate(cat_teams) if y is not None]:
+                    self.teams[t].add_event(time, self.j_duration_team, cat, room)
         for breaktime in breaks[-2:0:-1]:
             self.j_slots.insert(breaktime, None)
-        
+
+        for x in self.j_slots:
+            print(x)
+            
         #table scheduling
         time_start = sum(self._team(3*self.j_calib).events[0][:2], self.travel)
         team_idx = next((t for t in range(3*self.j_calib + 1) if
@@ -91,6 +138,37 @@ class Tournament:
 
     def schedule_block(self):
         raise NotImplementedError
+
+    def split_divisions(self):
+        if not self.divisions:
+            return [self.teams]
+        most_allowed = max(12, math.ceil(self.num_teams / self.j_sets))
+
+        self.divs = set([team.div for team in self.teams])
+        self.divs = [(div, [team for team in self.teams if team.div == div]) for div in self.divs]
+        self.divs = [(teams, math.ceil(len(teams) / most_allowed)) for (name, teams) in self.divs]
+        self.divs.sort(key=lambda div: -len(div[0]) % most_allowed)
+
+        if sum([rooms for teams, rooms in self.divs]) > self.j_sets:
+            room_divs = []
+
+            teams_left, rooms_left = self.num_teams, self.j_sets
+            for teams, rooms in self.divs:
+                if (rooms_left - math.ceil(len(teams) / most_allowed)) * most_allowed >= teams_left\
+                        - len(teams):
+                    room_divs.append((teams, rooms))
+                    teams_left -= len(teams)
+                    rooms_left -= rooms
+            
+            impure_room_size = math.ceil(teams_left / rooms_left)
+            impure_rooms = list(util.chunks(sum((teams for teams, rooms in self.divs if
+                (teams, rooms) not in room_divs), []), impure_room_size))
+
+            pure = lambda ls, div: all((x.div == div for x in ls))
+            room_divs += [sum((room for room in impure_rooms if pure(room, teams[0].div)), [])
+                    for teams, rooms in self.divs]
+            room_divs += [room for room in impure_rooms if not pure(room, room[0].div)]
+            self.divs = [(teams, math.ceil(len(teams) / most_allowed)) for teams in room_divs if teams]
 
     def schedule_matches(self, time, team, round_info):
         self.t_slots = []
