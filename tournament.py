@@ -83,19 +83,7 @@ class Tournament:
         self.j_slots = list(zip(*[list(zip(*cat)) for cat in self.j_slots]))
         if self.j_calib:
             self.j_slots = [([0], [1], [2])] + self.j_slots
-
-        breaks = self.j_calib*[0] + [i if i + 1 < len(self.j_slots) else len(self.j_slots) for i in 
-                range(self.j_calib, 1 + len(self.j_slots), self.j_consec)]
-        print(breaks)
-        timeslots = [self.j_start + bool(j and self.j_calib)*self.travel + max(i - 1, 0)*self.j_break 
-                + j*self.j_duration for i in range(len(breaks) - 1) for j in range(*breaks[i:i + 2])]
-        self.j_slots = list(zip(timeslots, self.j_slots))
-        for time, teams in self.j_slots:
-            for cat, cat_teams in enumerate(teams):
-                for room, t in [(x, y) for (x, y) in enumerate(cat_teams) if y is not None]:
-                    self.teams[t].add_event(time, self.j_duration_team, cat, room)
-        for breaktime in breaks[-2:0:-1]:
-            self.j_slots.insert(breaktime, None)
+        self.assign_jrooms()
 
         #table scheduling
         time_start = sum(self._team(3*self.j_calib).events[0][:2], self.travel)
@@ -149,6 +137,20 @@ class Tournament:
                     for teams, rooms in self.divs]
             room_divs += [room for room in impure_rooms if not pure(room, room[0].div)]
             self.divs = [(teams, math.ceil(len(teams) / most_allowed)) for teams in room_divs if teams]
+
+    def assign_jrooms(self):
+        breaks = self.j_calib*[0] + [i if i + 1 < len(self.j_slots) else len(self.j_slots) for i in 
+                range(self.j_calib, 1 + len(self.j_slots), self.j_consec)]
+        timeslots = [self.j_start + bool(j and self.j_calib)*self.travel 
+                + max(i - self.j_calib, 0)*self.j_break + j*self.j_duration 
+                for i in range(len(breaks) - 1) for j in range(*breaks[i:i + 2])]
+        self.j_slots = list(zip(timeslots, self.j_slots))
+        for time, teams in self.j_slots:
+            for cat, cat_teams in enumerate(teams):
+                for room, t in [(x, y) for (x, y) in enumerate(cat_teams) if y is not None]:
+                    self.teams[t].add_event(time, self.j_duration_team, cat, room)
+        for breaktime in breaks[-2:0:-1]:
+            self.j_slots.insert(breaktime, None)
 
     def schedule_matches(self, time, team, round_info):
         self.t_slots = []
@@ -227,8 +229,6 @@ class Tournament:
         print("file saved as", (' ({})'.format(count) if count else '').join(outfpath))
 
     def _export_judge_views(self, wb, time_fmt_str, team_width):
-        for time in self.j_slots:
-            print(time)
         thin = styles.Side(border_style='thin', color='000000')
         thick = styles.Side(border_style='thick', color='000000')
 
