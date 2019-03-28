@@ -83,27 +83,10 @@ class Tournament:
         self.j_slots = list(zip(*[list(zip(*cat)) for cat in self.j_slots]))
         if self.j_calib:
             self.j_slots = [([0], [1], [2])] + self.j_slots
-        print('\n'.join(map(str, self.j_slots)))
 
-
-        #for time in zip(*self.j_slots):
-        #    print('|'.join([''.join([colored('{:^8}'.format('-' if i is None else i), 'white' if i is None 
-        #        else ('cyan' if self.teams[i].div is 1 else 'green')) for i in cat]) for cat in time]))
-
-        #raise SystemExit
-
-        #judge slot scheduling
-        #self.j_calib = self.j_calib and not self.divisions
-        #rot_dir = 1 if (3*self.j_calib - self.num_teams) % 3 is 1 else -1
-        #self.j_slots = [sum([list(range((j + i*rot_dir) % 3, self.num_teams, 3))
-        #    for i in range(3)], [])[self.j_calib:] for j in range(3)]
-        #self.j_slots = list(zip(*[util.chunks(l + (-len(l) % self.j_sets)*[None], self.j_sets) 
-        #    for l in self.j_slots]))
-        #if self.j_calib:
-        #    self.j_slots = [([0], [1], [2])] + self.j_slots
-
-        breaks = [0] + [i if i + 1 < len(self.j_slots) else len(self.j_slots) for i in 
+        breaks = self.j_calib*[0] + [i if i + 1 < len(self.j_slots) else len(self.j_slots) for i in 
                 range(self.j_calib, 1 + len(self.j_slots), self.j_consec)]
+        print(breaks)
         timeslots = [self.j_start + bool(j and self.j_calib)*self.travel + max(i - 1, 0)*self.j_break 
                 + j*self.j_duration for i in range(len(breaks) - 1) for j in range(*breaks[i:i + 2])]
         self.j_slots = list(zip(timeslots, self.j_slots))
@@ -114,9 +97,6 @@ class Tournament:
         for breaktime in breaks[-2:0:-1]:
             self.j_slots.insert(breaktime, None)
 
-        for x in self.j_slots:
-            print(x)
-            
         #table scheduling
         time_start = sum(self._team(3*self.j_calib).events[0][:2], self.travel)
         team_idx = next((t for t in range(3*self.j_calib + 1) if
@@ -247,6 +227,8 @@ class Tournament:
         print("file saved as", (' ({})'.format(count) if count else '').join(outfpath))
 
     def _export_judge_views(self, wb, time_fmt_str, team_width):
+        for time in self.j_slots:
+            print(time)
         thin = styles.Side(border_style='thin', color='000000')
         thick = styles.Side(border_style='thick', color='000000')
 
@@ -337,7 +319,7 @@ class Tournament:
             for row in ws.rows:
                 for cell in row:
                     cell.alignment = styles.Alignment(horizontal='center')
-                    if (cell.column - 2) % (2*team_width) == 2:
+                    if (cell.column - 2) % (2*team_width) == 0:
                         cell.border = styles.Border(left=thick)
                     elif (cell.column - 2) % (2*team_width) == team_width:
                         cell.border = styles.Border(left=thin)
