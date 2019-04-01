@@ -87,7 +87,8 @@ class Tournament:
         self.assign_judge_times()
 
         #table scheduling
-        time_start = sum(self._team(3*self.j_calib).events[0][:2], self.travel)
+        time_start = sum(min([ev for ev in self.teams[3*self.j_calib].events if ev[2] < 3])[:2], 
+                self.travel)
         team_idx = -1
         while team_idx == -1:
             team_idx = next((t for t in range(3*self.j_calib + 1) if
@@ -191,6 +192,7 @@ class Tournament:
                 else:
                     max_matches = min(max_matches, 
                             math.ceil((2*self.num_teams + start_team - team) / match_sizes[-1]))
+                    max_teams -= max_teams % 2
 
                 for match_size in util.sum_to(match_sizes, max_teams, max_matches):
                     timeslot = [i % self.num_teams for i in range(team, team + match_size)]
@@ -310,7 +312,7 @@ class Tournament:
         ws_overall.append(header)
         t_pair_sheets = [wb.create_sheet(room[:-2]) for room in self.rooms[5][:2*self.t_pairs:2]]
         for t_pair in range(self.t_pairs):
-            t_pair_sheets[t_pair].append([''] + header[team_width*t_pair + 1: team_width*(t_pair + 2)])
+            t_pair_sheets[t_pair].append([''] + header[2*team_width*t_pair + 1: 2*team_width*(t_pair + 1)])
 
         for slot in self.t_slots:
             if slot is None:
