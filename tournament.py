@@ -29,11 +29,13 @@ class Tournament:
 
     def schedule(self):
         try:
+            print("Reading data")
             self.read_data(self.fpath)
             for team in self.teams:
                 team.add_event(self.coach_start, self.coach_duration, 3, 0)
                 team.add_event(self.open_start, self.open_duration, 4, 0)
 
+            print("Starting judge scheduling")
             self.split_divisions()
             if self.scheduling_method == "Interlaced":
                 self.schedule_interlaced()
@@ -41,15 +43,17 @@ class Tournament:
                 self.schedule_block()
             else:
                 raise ValueError(self.scheduling_method + " scheduling is not supported")
+            print("Scheduling competition tables")
             self.assign_tables()
+            print("Exporting schedule")
             self.export()
 
         except Exception as e:
             raise e
             print(e)
-            if sys.platform == "win32":
-                os.system("pause")
-            raise SystemExit
+
+        if sys.platform == "win32":
+            os.system("pause")
     
     def schedule_interlaced(self):
         self.j_calib = self.j_calib and not self.divisions
@@ -242,7 +246,7 @@ class Tournament:
                 saved = True
             except PermissionError:
                 count += 1
-        print("file saved as", (' ({})'.format(count) if count else '').join(outfpath))
+        print("Schedule saved as", (' ({})'.format(count) if count else '').join(outfpath))
 
     def _export_judge_views(self, wb, time_fmt_str, team_width):
         thin = styles.Side(border_style='thin', color='000000')
@@ -431,4 +435,5 @@ class Tournament:
             raise KeyError(str(e) + " not found in 'key' column in sheet 'Input Form'")
         
 if __name__ == "__main__":
+    print("Python environment initialized")
     Tournament().schedule()
