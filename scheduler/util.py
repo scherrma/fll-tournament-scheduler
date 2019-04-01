@@ -21,7 +21,7 @@ def sum_to(options, goal, picks):
     if goal < min(options):
         select = [goal]
     else:
-        while goal > 0 and picks > 0:
+        while goal >= min(options) and picks > 0:
             select += [min(options, key=lambda x:abs(x-goal/picks))]
             picks -= 1
             goal -= select[-1]
