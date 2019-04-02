@@ -20,7 +20,7 @@ class Tournament:
             root = tkinter.Tk()
             root.withdraw()
             self.fpath = filedialog.askopenfilename(
-                    filetypes=[("Excel files (*.xls, *.xlsm, *.xlsx)", "*.xls;*.xlsm;*.xlsx")])
+                    filetypes=[("Excel files (*.xls, *.xlsm, *.xlsx)", "*.xls *.xlsm *.xlsx")])
             root.destroy()
         elif len(sys.argv) == 2:
             self.fpath = sys.argv[1]
