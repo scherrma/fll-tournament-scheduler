@@ -234,7 +234,6 @@ class Tournament:
         self._export_judge_views(wb, time_fmt_str, team_width)
         self._export_table_views(wb, time_fmt_str, team_width)
         self._export_team_views(wb, time_fmt_str, team_width)
-        wb._sheets = wb._sheets[1:] + wb._sheets[:1]
                
         saved = False
         count = 0
