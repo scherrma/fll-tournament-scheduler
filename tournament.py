@@ -20,7 +20,7 @@ class Tournament:
             root = tkinter.Tk()
             root.withdraw()
             self.fpath = filedialog.askopenfilename(
-                    filetypes=[("Excel files (*.xls, *.xlsm, *.xlsx)", "*.xls *.xlsm *.xlsx")])
+                filetypes=[("Excel files (*.xls, *.xlsm, *.xlsx)", "*.xls *.xlsm *.xlsx")])
             root.destroy()
         elif len(sys.argv) == 2:
             self.fpath = sys.argv[1]
@@ -54,34 +54,35 @@ class Tournament:
 
         if sys.platform == "win32":
             os.system("pause")
-    
+
     def schedule_interlaced(self):
         self.j_calib = self.j_calib and not self.divisions
 
         max_room = max([math.ceil(len(teams) / rooms) for teams, rooms in self.divs])
         most_rooms = max([rooms for teams, rooms in self.divs])
-        
-        pick_order = math.ceil(max_room / 3)*[val for div_picks in 
-                zip(*[rooms*[i] + (most_rooms - rooms)*[None] for i, (tms, rooms) in enumerate(self.divs)]) 
-                for val in 3*div_picks if val is not None]
+
+        picks = [util.rpad(rooms*[i], most_rooms, None) for i, (tms, rooms) in enumerate(self.divs)]
+        pick_order = math.ceil(max_room / 3)*[val for div_picks in zip(*picks)
+                                              for val in 3*div_picks if val is not None]
 
         for i, (teams, rooms) in enumerate(self.divs):
-            last_team = util.nth_occurance(pick_order, i, len(teams))
+            last_team = util.nth_occurence(pick_order, i, len(teams))
             pick_order = pick_order[:last_team + 1] + [x for x in pick_order[last_team + 1:] if x != i]
-        
-        excess = min([-len(teams) % 3 for teams, rooms in self.divs if 
-            math.ceil(len(teams) / rooms) == max_room])
+
+        excess = min([-len(teams) % 3 for teams, rooms in self.divs if
+                      math.ceil(len(teams) / rooms) == max_room])
         div_teams = [util.rpad([i for i, j in enumerate(pick_order) if j == div],
-            3*math.ceil(max_room/3)*rooms - excess, None) for div, (teams, rooms) in enumerate(self.divs)]
+                               3*math.ceil(max_room/3)*rooms - excess, None)
+                     for div, (teams, rooms) in enumerate(self.divs)]
 
         team_order = [list(zip(*x)) for x in list(zip(div_teams, [teams for teams, rooms in self.divs]))]
         self.teams = [team for idx, team in sorted(sum(team_order, []))]
-        
+
         self.j_slots = [[], [], []]
         for teams, (team_names, rooms) in zip(div_teams, self.divs):
             rot_dir = 1 if (3*self.j_calib - len(teams)) % 3 is 1 else -1
             tmp = [sum([teams[(j + i*rot_dir) % 3 : len(teams) : 3] for i in range(3)], [])[self.j_calib:]
-                    for j in range(3)]
+                   for j in range(3)]
             for i in range(3):
                 self.j_slots[i] += [tmp[i][j::rooms] for j in range(rooms)]
         self.j_slots = [[util.rpad(room, max_room, None) for room in cat] for cat in self.j_slots]
@@ -91,12 +92,12 @@ class Tournament:
         self.assign_judge_times()
 
         #table scheduling
-        time_start = sum(min([ev for ev in self.teams[3*self.j_calib].events if ev[2] < 3])[:2], 
-                self.travel)
+        time_start = sum(min([ev for ev in self.teams[3*self.j_calib].events if ev[2] < 3])[:2],
+                         self.travel)
         team_idx = -1
         while team_idx == -1:
             team_idx = next((t for t in range(3*self.j_calib + 1) if
-                self._team(t).available(time_start, self.t_duration[0], self.travel)), -1)
+                             self._team(t).available(time_start, self.t_duration[0], self.travel)), -1)
             if team_idx == -1:
                 time_start += timedelta(minutes=5)
 
@@ -107,7 +108,8 @@ class Tournament:
         min_early_run_rate = max(2, 2*math.ceil(run_rates[0]/2))
         if self.num_teams % min_early_run_rate:
             early_avail = [self._team(team_idx - i).available(time_start - self.t_duration[0],
-                self.t_duration[0], self.travel) for i in range(min_early_run_rate)]
+                                                              self.t_duration[0], self.travel)
+                           for i in range(min_early_run_rate)]
             if all(early_avail):
                 team_idx -= len(early_avail)
                 time_start -= self.t_duration[0]
@@ -137,20 +139,22 @@ class Tournament:
                     room_divs.append((teams, rooms))
                     teams_left -= len(teams)
                     rooms_left -= rooms
-            
+
             impure_room_size = math.ceil(teams_left / rooms_left)
-            impure_rooms = list(util.chunks(sum((teams for teams, rooms in self.divs if
-                (teams, rooms) not in room_divs), []), impure_room_size))
+            chunks = lambda ls, n: [ls[i:i + n] for i in range(0, len(ls), n)]
+            impure_rooms = chunks(sum((teams for teams, rooms in self.divs
+                                       if (teams, rooms) not in room_divs), []), impure_room_size)
 
             pure = lambda ls, div: all((x.div == div for x in ls))
             room_divs += [sum((room for room in impure_rooms if pure(room, teams[0].div)), [])
-                    for teams, rooms in self.divs]
+                               for teams, rooms in self.divs]
             room_divs += [room for room in impure_rooms if not pure(room, room[0].div)]
             self.divs = [(teams, math.ceil(len(teams) / most_allowed)) for teams in room_divs if teams]
 
     def assign_judge_times(self):
-        breaks = self.j_calib*[0] + [i if i + 1 < len(self.j_slots) else len(self.j_slots) for i in 
-                range(self.j_calib, 1 + len(self.j_slots), self.j_consec)] + [len(self.j_slots)]
+        breaks = self.j_calib*[0] + [i if i + 1 < len(self.j_slots) else len(self.j_slots) for i in
+                                     range(self.j_calib, 1 + len(self.j_slots), self.j_consec)]\
+                                  + [len(self.j_slots)]
         timeslots = [[self.j_start + bool(j and self.j_calib)*self.travel
                 + max(i - self.j_calib, 0)*self.j_break + j*self.j_duration
                 for j in range(breaks[i], breaks[i+1] + 1)] for i in range(len(breaks) - 1)] 
