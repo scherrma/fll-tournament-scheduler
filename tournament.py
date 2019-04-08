@@ -215,8 +215,6 @@ class Tournament:
             if break_time is not None:
                 time += break_time
                 self.t_slots += [None]
-            print('\n'.join(['{} (round {}): {}'.format(slot[0].strftime('%r'), slot[1], slot[2]) 
-                             if slot else 'None' for slot in self.t_slots]))
 
     def assign_tables(self):
         for (time, rnd, teams) in [x for x in self.t_slots if x is not None]:
@@ -289,14 +287,9 @@ class Tournament:
                                                       (i + 1)*team_width*self.j_sets + 1])
 
         for ws in [ws_overall] + cat_sheets: #formatting
-            for row in ws.rows:
-                for cell in row:
-                    cell.alignment = styles.Alignment(horizontal='center')
-                    if (cell.column - 2) % (team_width*self.j_sets) == 0:
-                        cell.border = styles.Border(left=thick)
-                    elif (cell.column - 2) % team_width == 0 and cell.row > 1 + 2*self.j_calib:
-                        cell.border = styles.Border(left=thin)
-                row[0].alignment = styles.Alignment(horizontal='right')
+            util.basic_ws_format(ws, 4)
+            util.ws_borders(ws, ((styles.Border(left=thick), team_width*self.j_sets, 2, 0),
+                                 (styles.Border(left=thin), team_width, 2, 1 + 2*self.j_calib)))
 
             for i in range((len(list(ws.columns)) - 1) // (team_width*self.j_sets)):
                 ws.cell(row=1, column=team_width*self.j_sets*i + 2).font = styles.Font(bold=True)
@@ -308,7 +301,6 @@ class Tournament:
                 if self.j_calib:
                     ws.merge_cells(start_row=3, start_column=2 + team_width*(self.j_sets*i + 1),
                                    end_row=3, end_column=1 + team_width*(self.j_sets*(i + 1)))
-            self._basic_ws_format(ws, 4)
 
     def _export_table_views(self, wb, time_fmt, team_width):
         thin = styles.Side(border_style='thin', color='000000')
@@ -336,17 +328,11 @@ class Tournament:
                                                                   2*team_width*(t_pair + 1) + 1])
 
         for ws in [ws_overall] + t_pair_sheets:
-            for row in ws.rows:
-                for cell in row:
-                    cell.alignment = styles.Alignment(horizontal='center')
-                    if (cell.column - 2) % (2*team_width) == 0:
-                        cell.border = styles.Border(left=thick)
-                    elif (cell.column - 2) % (2*team_width) == team_width:
-                        cell.border = styles.Border(left=thin)
-                row[0].alignment = styles.Alignment(horizontal='right')
+            util.basic_ws_format(ws, 2)
+            util.ws_borders(ws, ((styles.Border(left=thick), 2*team_width, 2, 0),
+                                 (styles.Border(left=thin), 2*team_width, 2 + team_width, 0)))
             for i in range(2, len(list(ws.columns)), team_width):
                 ws.merge_cells(start_row=1, start_column=i, end_row=1, end_column=i + team_width-1)
-            self._basic_ws_format(ws, 2)
 
     def _export_team_views(self, wb, time_fmt, team_width):
         ws_chron = wb.create_sheet("Team View (Chronological)")
@@ -367,17 +353,7 @@ class Tournament:
                                in sorted(team.events, key=lambda x: x[2])])
 
         for ws in (ws_chron, ws_event):
-            self._basic_ws_format(ws)
-
-    def _basic_ws_format(self, ws, start=0):
-        """bolds the top row, stripes the rows, and sets column widths"""
-        for col in ws.columns:
-            col[0].font = styles.Font(bold=True)
-            length = 1.2*max(len(str(cell.value)) for cell in col[start:])
-            ws.column_dimensions[get_column_letter(col[0].column)].width = length
-        for row in list(ws.rows)[max(2, start - 1)::2]:
-            for cell in row:
-                cell.fill = styles.PatternFill('solid', fgColor='DDDDDD')
+            util.basic_ws_format(ws)
 
     def _team(self, team_num):
         return self.teams[team_num % self.num_teams]
