@@ -92,7 +92,7 @@ class Tournament:
         #table scheduling
         time_start = [e_start + e_length + self.travel for (e_start, e_length, *others)
                       in self.teams[3*self.j_calib].events]
-        time_start = sorted([self.j_start] + [t for t in time_start if t >= self.j_start])
+        time_start = sorted([t for t in time_start if t >= self.j_start])
         time_start = next((time for time in time_start if self.teams[3*self.j_calib]
                            .available(time, self.t_duration[0], self.travel)))
         team_idx = next((t for t in range(3*self.j_calib + 1) if
@@ -215,6 +215,8 @@ class Tournament:
             if break_time is not None:
                 time += break_time
                 self.t_slots += [None]
+            print('\n'.join(['{} (round {}): {}'.format(slot[0].strftime('%r'), slot[1], slot[2]) 
+                             if slot else 'None' for slot in self.t_slots]))
 
     def assign_tables(self):
         for (time, rnd, teams) in [x for x in self.t_slots if x is not None]:
