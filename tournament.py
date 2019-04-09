@@ -132,7 +132,7 @@ class Tournament:
                       {team.div for team in self.teams}]]
         self.divs.sort(key=lambda div: -len(div[0]) % room_max)
 
-        if sum([rooms for teams, rooms in self.divs]) > self.j_sets:
+        if sum([rooms for _, rooms in self.divs]) > self.j_sets:
             room_divs, impure_divs = [], []
             teams_left, rooms_left = self.num_teams, self.j_sets
             for teams, rooms in self.divs:
@@ -143,20 +143,20 @@ class Tournament:
                 else:
                     impure_divs += [teams]
 
-            max_room = math.ceil(teams_left / rooms_left)
-            excess = rooms_left*max_room - teams_left
+            room_max = math.ceil(teams_left / rooms_left)
+            excess = rooms_left*room_max - teams_left
 
             idx, spillover = 0, 0
             impure_teams = sum(impure_divs, [])
             for i, teams in enumerate(impure_divs):
                 skips = int(i < excess % len(impure_divs)) + (excess // len(impure_divs))
-                pure = ((len(teams) - spillover) // max_room) * max_room - max(0, skips - 1)
-                room_divs.append((impure_teams[idx:idx + pure], math.ceil(pure / max_room)))
+                pure = ((len(teams) - spillover) // room_max) * room_max - max(0, skips - 1)
+                room_divs.append((impure_teams[idx:idx + pure], math.ceil(pure / room_max)))
 
                 idx += pure
-                spillover += pure + max_room - bool(skips) - len(teams)
-                room_divs.append((impure_teams[idx:idx + max_room - bool(skips)], 1))
-                idx += max_room - bool(skips)
+                room_divs.append((impure_teams[idx:idx + room_max - bool(skips)], 1))
+                idx += room_max - bool(skips)
+                spillover += pure + room_max - bool(skips) - len(teams)
             self.divs = [(teams, rooms) for teams, rooms in room_divs if teams]
 
     def assign_judge_times(self):
