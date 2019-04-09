@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+"""A module containing the Tournament class for using in creating FLL qualifier schedules."""
 from datetime import datetime, timedelta
 import math
 import os
@@ -12,7 +13,9 @@ import scheduler.util as util
 from scheduler.team import Team
 
 class Tournament:
+    """A class designed to create and export schedules for FLL qualifier tournaments."""
     def __init__(self):
+        """Creates a tournament and requests a roster/settings file if one was not provided."""
         if len(sys.argv) == 1:
             root = tkinter.Tk()
             root.withdraw()
@@ -25,6 +28,7 @@ class Tournament:
             print("{} accepts 0 or 1 arguments; {} received".format(sys.argv[0], len(sys.argv) - 1))
 
     def schedule(self):
+        """Top-level scheduling function; reads data, generates schedule, and exports."""
         try:
             print("Reading data")
             self.read_data(self.fpath)
@@ -53,6 +57,7 @@ class Tournament:
             os.system("pause")
 
     def schedule_interlaced(self):
+        """Generates judging and table schedules using interlaced scheduling."""
         self.j_calib = self.j_calib and not self.divisions
 
         max_room = max([math.ceil(len(teams) / rooms) for teams, rooms in self.divs])
@@ -113,9 +118,11 @@ class Tournament:
         self.schedule_matches(time_start, team_idx, zip(round_split, (run_rate, None), break_times))
 
     def schedule_block(self):
+        """Generates judging and table schedules using block scheduling."""
         raise NotImplementedError("Block scheduling is not implemented yet")
 
     def split_divisions(self):
+        """Sets self.divs to a list of (teams, rooms for those teams) based on division."""
         if not self.divisions:
             self.divs = [(self.teams, self.j_sets)]
         room_max = max(12, math.ceil(self.num_teams / self.j_sets))
@@ -153,6 +160,7 @@ class Tournament:
             self.divs = [(teams, rooms) for teams, rooms in room_divs if teams]
 
     def assign_judge_times(self):
+        """Determines when each judging session will happen and assigns teams to those slots."""
         breaks = self.j_calib*[0] + [i if i + 1 < len(self.j_slots) else len(self.j_slots) for i in
                                      range(self.j_calib, 1 + len(self.j_slots), self.j_consec)]\
                                   + [len(self.j_slots)]
@@ -177,6 +185,7 @@ class Tournament:
                     self.teams[team].add_event(time, self.j_duration_team, cat, room)
 
     def schedule_matches(self, time, team, round_info):
+        """Determines when table matches will occur and assigns teams to matches."""
         def avail(start, rnd):
             return [(t, self._team(start + t).available(time, self.t_duration[rnd], self.travel))
                     for t in range(self.num_teams)]
@@ -222,6 +231,7 @@ class Tournament:
                 self.t_slots += [None]
 
     def assign_tables(self):
+        """Assigns teams to a particular table within a match."""
         for (time, rnd, teams) in [x for x in self.t_slots if x is not None]:
             for i in [j for j in range(len(teams)) if teams[j] is not None]:
                 self._team(teams[i]).add_event(time, self.t_duration[rnd], 5, i)
@@ -232,6 +242,7 @@ class Tournament:
                 rnd += 1
 
     def export(self):
+        """Exports schedule to an xlsx file; uses the tournament name for the file name."""
         time_fmt = ('%#I:%M %p' if sys.platform == "win32" else '%-I:%M %p')
         team_width = 3 if self.divisions else 2
         workbook = openpyxl.load_workbook(self.fpath)
@@ -255,6 +266,7 @@ class Tournament:
         print('Schedule saved: {}{}.xlsx'.format(outfpath, ' ({})'.format(count) if count else ''))
 
     def _export_judge_views(self, workbook, time_fmt, team_width):
+        """Adds the four judging-focused sheets to the output workbook."""
         thin = styles.Side(border_style='thin', color='000000')
         thick = styles.Side(border_style='thick', color='000000')
 
@@ -308,6 +320,7 @@ class Tournament:
                                       end_row=3, end_column=1 + team_width*(self.j_sets*(i + 1)))
 
     def _export_table_views(self, workbook, time_fmt, team_width):
+        """Adds the competition table focused sheets to the output workbook."""
         thin = styles.Side(border_style='thin', color='000000')
         thick = styles.Side(border_style='thick', color='000000')
 
@@ -341,6 +354,7 @@ class Tournament:
                                   end_row=1, end_column=i + team_width - 1)
 
     def _export_team_views(self, workbook, time_fmt):
+        """Adds event-sorted and time-sorted team-focused views to the output workbook."""
         ws_chron = workbook.create_sheet("Team View (Chronological)")
         ws_event = workbook.create_sheet("Team View (Event)")
         team_header = ['Team Number'] + (['Division'] if self.divisions else []) + ['Team Name']
@@ -362,9 +376,11 @@ class Tournament:
             util.basic_ws_format(sheet)
 
     def _team(self, team_num):
+        """Returns the team at the specified internal index; wraps modularly."""
         return self.teams[team_num % self.num_teams]
 
     def read_data(self, fpath):
+        """Imports the team roster and scheduling settings from the input form."""
         dfs = pandas.read_excel(fpath, sheet_name=["Team Information", "Input Form"])
 
         team_sheet = dfs["Team Information"]
