@@ -8,7 +8,6 @@ from tkinter import filedialog
 import pandas
 import openpyxl
 import openpyxl.styles as styles
-from openpyxl.utils import get_column_letter
 import scheduler.util as util
 from scheduler.team import Team
 
@@ -77,8 +76,8 @@ class Tournament:
         self.teams = [team for idx, team in sorted(sum(list(team_order), []))]
 
         self.j_slots = [[], [], []]
-        for teams, (team_names, rooms) in zip(div_teams, self.divs):
-            rot_dir = 1 if (3*self.j_calib - len(teams)) % 3 is 1 else -1
+        for teams, (_, rooms) in zip(div_teams, self.divs):
+            rot_dir = 1 if (3*self.j_calib - len(teams)) % 3 == 1 else -1
             tmp = [sum([teams[(j + i*rot_dir) % 3 : len(teams) : 3] for i in range(3)],
                        [])[self.j_calib:] for j in range(3)]
             for i in range(3):
@@ -90,7 +89,7 @@ class Tournament:
         self.assign_judge_times()
 
         #table scheduling
-        time_start = [e_start + e_length + self.travel for (e_start, e_length, *others)
+        time_start = [e_start + e_length + self.travel for (e_start, e_length, *_)
                       in self.teams[3*self.j_calib].events]
         time_start = sorted([t for t in time_start if t >= self.j_start])
         time_start = next((time for time in time_start if self.teams[3*self.j_calib]
@@ -121,31 +120,37 @@ class Tournament:
             self.divs = [(self.teams, self.j_sets)]
         room_max = max(12, math.ceil(self.num_teams / self.j_sets))
 
-        self.divs = {team.div for team in self.teams}
-        self.divs = [(div, [team for team in self.teams if team.div == div]) for div in self.divs]
-        self.divs = [(teams, math.ceil(len(teams) / room_max)) for (name, teams) in self.divs]
+        self.divs = [(teams, math.ceil(len(teams) / room_max)) for teams in
+                     [[team for team in self.teams if team.div == div] for div in
+                      {team.div for team in self.teams}]]
         self.divs.sort(key=lambda div: -len(div[0]) % room_max)
 
         if sum([rooms for teams, rooms in self.divs]) > self.j_sets:
-            room_divs = []
-
+            room_divs, impure_divs = [], []
             teams_left, rooms_left = self.num_teams, self.j_sets
             for teams, rooms in self.divs:
                 if (-len(teams) // room_max + rooms_left) * room_max >= teams_left - len(teams):
                     room_divs.append((teams, rooms))
                     teams_left -= len(teams)
                     rooms_left -= rooms
+                else:
+                    impure_divs += [teams]
 
-            impure_room_size = math.ceil(teams_left / rooms_left)
-            chunks = lambda ls, n: [ls[i:i + n] for i in range(0, len(ls), n)]
-            impure_rooms = chunks(sum((teams for teams, rooms in self.divs
-                                       if (teams, rooms) not in room_divs), []), impure_room_size)
+            max_room = math.ceil(teams_left / rooms_left)
+            excess = rooms_left*max_room - teams_left
 
-            pure = lambda ls, div: all((x.div == div for x in ls))
-            room_divs += [sum((room for room in impure_rooms if pure(room, teams[0].div)), [])
-                          for teams, rooms in self.divs]
-            room_divs += [room for room in impure_rooms if not pure(room, room[0].div)]
-            self.divs = [(teams, math.ceil(len(teams)/room_max)) for teams in room_divs if teams]
+            idx, spillover = 0, 0
+            impure_teams = sum(impure_divs, [])
+            for i, teams in enumerate(impure_divs):
+                skips = int(i < excess % len(impure_divs)) + (excess // len(impure_divs))
+                pure = ((len(teams) - spillover) // max_room) * max_room - max(0, skips - 1)
+                room_divs.append((impure_teams[idx:idx + pure], math.ceil(pure / max_room)))
+
+                idx += pure
+                spillover += pure + max_room - bool(skips) - len(teams)
+                room_divs.append((impure_teams[idx:idx + max_room - bool(skips)], 1))
+                idx += max_room - bool(skips)
+            self.divs = [(teams, rooms) for teams, rooms in room_divs if teams]
 
     def assign_judge_times(self):
         breaks = self.j_calib*[0] + [i if i + 1 < len(self.j_slots) else len(self.j_slots) for i in
@@ -172,8 +177,8 @@ class Tournament:
                     self.teams[team].add_event(time, self.j_duration_team, cat, room)
 
     def schedule_matches(self, time, team, round_info):
-        def avail(start, rd):
-            return [(t, self._team(start + t).available(time, self.t_duration[rd], self.travel))
+        def avail(start, rnd):
+            return [(t, self._team(start + t).available(time, self.t_duration[rnd], self.travel))
                     for t in range(self.num_teams)]
         self.t_slots = []
         t_idle = 0
@@ -220,41 +225,41 @@ class Tournament:
         for (time, rnd, teams) in [x for x in self.t_slots if x is not None]:
             for i in [j for j in range(len(teams)) if teams[j] is not None]:
                 self._team(teams[i]).add_event(time, self.t_duration[rnd], 5, i)
-        for t in self.teams:
+        for team in self.teams:
             rnd = 0
-            for event in [e for e in t.events if e[2] == 5]:
+            for event in [e for e in team.events if e[2] == 5]:
                 event[2] += rnd
                 rnd += 1
 
     def export(self):
         time_fmt = ('%#I:%M %p' if sys.platform == "win32" else '%-I:%M %p')
         team_width = 3 if self.divisions else 2
-        wb = openpyxl.load_workbook(self.fpath)
+        workbook = openpyxl.load_workbook(self.fpath)
 
-        for sheet in [ws for ws in wb.sheetnames if ws != 'Team Information']:
-            del wb[sheet]
+        for sheet in [ws for ws in workbook.sheetnames if ws != 'Team Information']:
+            del workbook[sheet]
 
-        self._export_judge_views(wb, time_fmt, team_width)
-        self._export_table_views(wb, time_fmt, team_width)
-        self._export_team_views(wb, time_fmt, team_width)
+        self._export_judge_views(workbook, time_fmt, team_width)
+        self._export_table_views(workbook, time_fmt, team_width)
+        self._export_team_views(workbook, time_fmt)
 
         outfpath = os.path.join(os.path.dirname(self.fpath),
                                 self.tournament_name.lower().replace(' ', '_') + '_schedule')
         saved, count = False, 0
         while not saved:
             try:
-                wb.save('{}{}.xlsx'.format(outfpath, ' ({})'.format(count) if count else ''))
+                workbook.save('{}{}.xlsx'.format(outfpath, ' ({})'.format(count) if count else ''))
                 saved = True
             except PermissionError:
                 count += 1
         print('Schedule saved: {}{}.xlsx'.format(outfpath, ' ({})'.format(count) if count else ''))
 
-    def _export_judge_views(self, wb, time_fmt, team_width):
+    def _export_judge_views(self, workbook, time_fmt, team_width):
         thin = styles.Side(border_style='thin', color='000000')
         thick = styles.Side(border_style='thick', color='000000')
 
-        ws_overall = wb.create_sheet("Judging Rooms")
-        cat_sheets = [wb.create_sheet(cat) for cat in self.event_names[:3]]
+        ws_overall = workbook.create_sheet("Judging Rooms")
+        cat_sheets = [workbook.create_sheet(cat) for cat in self.event_names[:3]]
 
         header_total, rooms_total = [], []
         for i in range(3):
@@ -286,57 +291,58 @@ class Tournament:
                 cat_sheets[i].append([line[0]] + line[i*team_width*self.j_sets + 1:
                                                       (i + 1)*team_width*self.j_sets + 1])
 
-        for ws in [ws_overall] + cat_sheets: #formatting
-            util.basic_ws_format(ws, 4)
-            util.ws_borders(ws, ((styles.Border(left=thick), team_width*self.j_sets, 2, 0),
-                                 (styles.Border(left=thin), team_width, 2, 1 + 2*self.j_calib)))
+        for sheet in [ws_overall] + cat_sheets: #formatting
+            util.basic_ws_format(sheet, 4)
+            util.ws_borders(sheet, ((styles.Border(left=thick), team_width*self.j_sets, 2, 0),
+                                    (styles.Border(left=thin), team_width, 2, 1 + 2*self.j_calib)))
 
-            for i in range((len(list(ws.columns)) - 1) // (team_width*self.j_sets)):
-                ws.cell(row=1, column=team_width*self.j_sets*i + 2).font = styles.Font(bold=True)
-                ws.merge_cells(start_row=1, start_column=2 + i*team_width*self.j_sets,
-                               end_row=1, end_column=1 + (i + 1)*team_width*self.j_sets)
+            for i in range((len(list(sheet.columns)) - 1) // (team_width*self.j_sets)):
+                sheet.cell(row=1, column=team_width*self.j_sets*i + 2).font = styles.Font(bold=True)
+                sheet.merge_cells(start_row=1, start_column=2 + i*team_width*self.j_sets,
+                                  end_row=1, end_column=1 + (i + 1)*team_width*self.j_sets)
                 for j in range(self.j_sets):
-                    ws.merge_cells(start_row=2, start_column=team_width*(self.j_sets*i + j) + 2,
-                                   end_row=2, end_column=team_width*(self.j_sets*i + j + 1) + 1)
+                    sheet.merge_cells(start_row=2, start_column=team_width*(self.j_sets*i + j) + 2,
+                                      end_row=2, end_column=team_width*(self.j_sets*i + j + 1) + 1)
                 if self.j_calib:
-                    ws.merge_cells(start_row=3, start_column=2 + team_width*(self.j_sets*i + 1),
-                                   end_row=3, end_column=1 + team_width*(self.j_sets*(i + 1)))
+                    sheet.merge_cells(start_row=3, start_column=2 + team_width*(self.j_sets*i + 1),
+                                      end_row=3, end_column=1 + team_width*(self.j_sets*(i + 1)))
 
-    def _export_table_views(self, wb, time_fmt, team_width):
+    def _export_table_views(self, workbook, time_fmt, team_width):
         thin = styles.Side(border_style='thin', color='000000')
         thick = styles.Side(border_style='thick', color='000000')
 
-        ws_overall = wb.create_sheet("Competition Tables")
+        sheet_overall = workbook.create_sheet("Competition Tables")
         header = sum([[tbl] + (team_width - 1)*[''] for tbl in self.rooms[5]], [''])
-        ws_overall.append(header)
-        t_pair_sheets = [wb.create_sheet(room[:-2]) for room in self.rooms[5][:2*self.t_pairs:2]]
+        sheet_overall.append(header)
+        t_pair_sheets = [workbook.create_sheet(room[:-2]) for room in self.rooms[5][::2]]
         for t_pair in range(self.t_pairs):
             t_pair_sheets[t_pair].append([''] + header[2*team_width*t_pair + 1:
                                                        2*team_width*(t_pair + 1)])
 
         for slot in self.t_slots:
             if slot is None:
-                for ws in t_pair_sheets + [ws_overall]:
-                    ws.append([''])
+                for sheet in t_pair_sheets + [sheet_overall]:
+                    sheet.append([''])
             else:
                 line = sum([(team_width - 1)*[''] + ['None'] if t is None else
                             self.teams[t].info(self.divisions) for t in slot[2]],
                            [slot[0].strftime(time_fmt)])
-                ws_overall.append(line)
+                sheet_overall.append(line)
                 for t_pair in range(self.t_pairs):
                     t_pair_sheets[t_pair].append([line[0]] + line[2*team_width*t_pair + 1:
                                                                   2*team_width*(t_pair + 1) + 1])
 
-        for ws in [ws_overall] + t_pair_sheets:
-            util.basic_ws_format(ws, 2)
-            util.ws_borders(ws, ((styles.Border(left=thick), 2*team_width, 2, 0),
-                                 (styles.Border(left=thin), 2*team_width, 2 + team_width, 0)))
-            for i in range(2, len(list(ws.columns)), team_width):
-                ws.merge_cells(start_row=1, start_column=i, end_row=1, end_column=i + team_width-1)
+        for sheet in [sheet_overall] + t_pair_sheets:
+            util.basic_ws_format(sheet, 2)
+            util.ws_borders(sheet, ((styles.Border(left=thick), 2*team_width, 2, 0),
+                                    (styles.Border(left=thin), 2*team_width, 2 + team_width, 0)))
+            for i in range(2, len(list(sheet.columns)), team_width):
+                sheet.merge_cells(start_row=1, start_column=i,
+                                  end_row=1, end_column=i + team_width - 1)
 
-    def _export_team_views(self, wb, time_fmt, team_width):
-        ws_chron = wb.create_sheet("Team View (Chronological)")
-        ws_event = wb.create_sheet("Team View (Event)")
+    def _export_team_views(self, workbook, time_fmt):
+        ws_chron = workbook.create_sheet("Team View (Chronological)")
+        ws_event = workbook.create_sheet("Team View (Event)")
         team_header = ['Team Number'] + (['Division'] if self.divisions else []) + ['Team Name']
         ws_chron.append(team_header + ['Event ' + str(i + 1) for i in range(len(self.event_names))])
         ws_event.append(team_header + self.event_names)
@@ -352,8 +358,8 @@ class Tournament:
                                for (time, length, cat, loc)
                                in sorted(team.events, key=lambda x: x[2])])
 
-        for ws in (ws_chron, ws_event):
-            util.basic_ws_format(ws)
+        for sheet in (ws_chron, ws_event):
+            util.basic_ws_format(sheet)
 
     def _team(self, team_num):
         return self.teams[team_num % self.num_teams]
