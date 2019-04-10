@@ -21,6 +21,10 @@ def nth_occurence(ls, val, n):
     """Returns the index of the nth occurance of a value in a list."""
     return [i for i, x in enumerate(ls) if x == val][n - 1]
 
+def round_up_to(val, base):
+    """Returns the least integer multiple of base greater than val."""
+    return val + -val % base
+
 def rpad(ls, size, val):
     """Right-pads a list with a prescribed value to a set length."""
     return ls + (size - len(ls))*[val]

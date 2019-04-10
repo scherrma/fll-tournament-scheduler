@@ -102,7 +102,7 @@ class Tournament:
         team_idx = next((t for t in range(3*self.j_calib + 1) if
                          self._team(t).available(time_start, self.t_duration[0], self.travel)))
 
-        round_split = [(0, 1), (2, 3)]
+        round_split = [(0, 1), range(2, len(self.event_names) - 5)]
         run_rate = 3*self.j_sets*self.t_duration[0]/(self.j_duration + self.j_break/self.j_consec)
         break_times = (self.t_lunch_duration, None)
 
@@ -201,18 +201,22 @@ class Tournament:
             team = next((t for t, free in avail(0, 0) if free))
             start_team = team
 
-            while team < 2*self.num_teams + start_team:
+            while team < len(rounds)*self.num_teams + start_team:
                 rnd = rounds[(team - start_team) // self.num_teams]
-                max_teams = next((t for t, free in avail(team, rnd) if not free), 2*self.num_teams)
+                max_teams = next((t for t, free in avail(team, rnd) if not free),
+                                 len(rounds)*self.num_teams)
+                max_teams = min(util.round_up_to(self.num_teams - (team - start_team) % self.num_teams,
+                                match_sizes[-1]), max_teams)
                 max_matches = (self._team(team).next_event(time)[0] - time - self.travel)\
                         // self.t_duration[rnd]
 
-                if team + max_teams >= 2*self.num_teams + start_team:
-                    max_teams = 2*self.num_teams + start_team - team
+                if team + max_teams >= len(rounds)*self.num_teams + start_team:
+                    max_teams = len(rounds)*self.num_teams + start_team - team
                     max_matches = min(max_matches, math.ceil(max_teams / match_sizes[-1]))
                 else:
-                    max_matches = min(max_matches, math.ceil((2*self.num_teams + start_team - team)
-                                                             / match_sizes[-1]))
+                    max_matches = min(max_matches, 
+                                      math.ceil((len(rounds)*self.num_teams + start_team - team)
+                                                / match_sizes[-1]))
                     max_teams -= max_teams % 2
 
                 for match_size in util.sum_to(match_sizes, max_teams, max_matches):
@@ -432,7 +436,6 @@ class Tournament:
             self.rooms += [sum([[tbl + ' A', tbl + ' B'] for tbl in
                                 self.param_sheet.loc["t_pair_names"].dropna().values.tolist()[1:]],
                                [])][:2*self.t_pairs]
-            self.t_rounds = len(self.param_sheet.loc["t_round_names"].dropna().values.tolist()[1:])
             self.t_duration = [timedelta(minutes=x) for x in
                                self.param_sheet.loc["t_durations"].dropna().values.tolist()[1:]]
             self.t_lunch = datetime.combine(datetime(1, 1, 1), param["t_lunch"])
