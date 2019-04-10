@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+"""A module containing the Tournament class for using in creating FLL qualifier schedules."""
 from datetime import datetime, timedelta
 import math
 import os
@@ -8,12 +9,13 @@ from tkinter import filedialog
 import pandas
 import openpyxl
 import openpyxl.styles as styles
-from openpyxl.utils import get_column_letter
 import scheduler.util as util
 from scheduler.team import Team
 
 class Tournament:
+    """A class designed to create and export schedules for FLL qualifier tournaments."""
     def __init__(self):
+        """Creates a tournament and requests a roster/settings file if one was not provided."""
         if len(sys.argv) == 1:
             root = tkinter.Tk()
             root.withdraw()
@@ -26,6 +28,7 @@ class Tournament:
             print("{} accepts 0 or 1 arguments; {} received".format(sys.argv[0], len(sys.argv) - 1))
 
     def schedule(self):
+        """Top-level scheduling function; reads data, generates schedule, and exports."""
         try:
             print("Reading data")
             self.read_data(self.fpath)
@@ -54,6 +57,7 @@ class Tournament:
             os.system("pause")
 
     def schedule_interlaced(self):
+        """Generates judging and table schedules using interlaced scheduling."""
         self.j_calib = self.j_calib and not self.divisions
 
         max_room = max([math.ceil(len(teams) / rooms) for teams, rooms in self.divs])
@@ -77,8 +81,8 @@ class Tournament:
         self.teams = [team for idx, team in sorted(sum(list(team_order), []))]
 
         self.j_slots = [[], [], []]
-        for teams, (team_names, rooms) in zip(div_teams, self.divs):
-            rot_dir = 1 if (3*self.j_calib - len(teams)) % 3 is 1 else -1
+        for teams, (_, rooms) in zip(div_teams, self.divs):
+            rot_dir = 1 if (3*self.j_calib - len(teams)) % 3 == 1 else -1
             tmp = [sum([teams[(j + i*rot_dir) % 3 : len(teams) : 3] for i in range(3)],
                        [])[self.j_calib:] for j in range(3)]
             for i in range(3):
@@ -90,7 +94,7 @@ class Tournament:
         self.assign_judge_times()
 
         #table scheduling
-        time_start = [e_start + e_length + self.travel for (e_start, e_length, *others)
+        time_start = [e_start + e_length + self.travel for (e_start, e_length, *_)
                       in self.teams[3*self.j_calib].events]
         time_start = sorted([t for t in time_start if t >= self.j_start])
         time_start = next((time for time in time_start if self.teams[3*self.j_calib]
@@ -114,40 +118,49 @@ class Tournament:
         self.schedule_matches(time_start, team_idx, zip(round_split, (run_rate, None), break_times))
 
     def schedule_block(self):
+        """Generates judging and table schedules using block scheduling."""
         raise NotImplementedError("Block scheduling is not implemented yet")
 
     def split_divisions(self):
+        """Sets self.divs to a list of (teams, rooms for those teams) based on division."""
         if not self.divisions:
             self.divs = [(self.teams, self.j_sets)]
         room_max = max(12, math.ceil(self.num_teams / self.j_sets))
 
-        self.divs = {team.div for team in self.teams}
-        self.divs = [(div, [team for team in self.teams if team.div == div]) for div in self.divs]
-        self.divs = [(teams, math.ceil(len(teams) / room_max)) for (name, teams) in self.divs]
+        self.divs = [(teams, math.ceil(len(teams) / room_max)) for teams in
+                     [[team for team in self.teams if team.div == div] for div in
+                      {team.div for team in self.teams}]]
         self.divs.sort(key=lambda div: -len(div[0]) % room_max)
 
-        if sum([rooms for teams, rooms in self.divs]) > self.j_sets:
-            room_divs = []
-
+        if sum([rooms for _, rooms in self.divs]) > self.j_sets:
+            room_divs, impure_divs = [], []
             teams_left, rooms_left = self.num_teams, self.j_sets
             for teams, rooms in self.divs:
                 if (-len(teams) // room_max + rooms_left) * room_max >= teams_left - len(teams):
                     room_divs.append((teams, rooms))
                     teams_left -= len(teams)
                     rooms_left -= rooms
+                else:
+                    impure_divs += [teams]
 
-            impure_room_size = math.ceil(teams_left / rooms_left)
-            chunks = lambda ls, n: [ls[i:i + n] for i in range(0, len(ls), n)]
-            impure_rooms = chunks(sum((teams for teams, rooms in self.divs
-                                       if (teams, rooms) not in room_divs), []), impure_room_size)
+            room_max = math.ceil(teams_left / rooms_left)
+            excess = rooms_left*room_max - teams_left
 
-            pure = lambda ls, div: all((x.div == div for x in ls))
-            room_divs += [sum((room for room in impure_rooms if pure(room, teams[0].div)), [])
-                          for teams, rooms in self.divs]
-            room_divs += [room for room in impure_rooms if not pure(room, room[0].div)]
-            self.divs = [(teams, math.ceil(len(teams)/room_max)) for teams in room_divs if teams]
+            idx, spillover = 0, 0
+            impure_teams = sum(impure_divs, [])
+            for i, teams in enumerate(impure_divs):
+                skips = int(i < excess % len(impure_divs)) + (excess // len(impure_divs))
+                pure = ((len(teams) - spillover) // room_max) * room_max - max(0, skips - 1)
+                room_divs.append((impure_teams[idx:idx + pure], math.ceil(pure / room_max)))
+
+                idx += pure
+                room_divs.append((impure_teams[idx:idx + room_max - bool(skips)], 1))
+                idx += room_max - bool(skips)
+                spillover += pure + room_max - bool(skips) - len(teams)
+            self.divs = [(teams, rooms) for teams, rooms in room_divs if teams]
 
     def assign_judge_times(self):
+        """Determines when each judging session will happen and assigns teams to those slots."""
         breaks = self.j_calib*[0] + [i if i + 1 < len(self.j_slots) else len(self.j_slots) for i in
                                      range(self.j_calib, 1 + len(self.j_slots), self.j_consec)]\
                                   + [len(self.j_slots)]
@@ -172,8 +185,9 @@ class Tournament:
                     self.teams[team].add_event(time, self.j_duration_team, cat, room)
 
     def schedule_matches(self, time, team, round_info):
-        def avail(start, rd):
-            return [(t, self._team(start + t).available(time, self.t_duration[rd], self.travel))
+        """Determines when table matches will occur and assigns teams to matches."""
+        def avail(start, rnd):
+            return [(t, self._team(start + t).available(time, self.t_duration[rnd], self.travel))
                     for t in range(self.num_teams)]
         self.t_slots = []
         t_idle = 0
@@ -215,48 +229,49 @@ class Tournament:
             if break_time is not None:
                 time += break_time
                 self.t_slots += [None]
-            print('\n'.join(['{} (round {}): {}'.format(slot[0].strftime('%r'), slot[1], slot[2]) 
-                             if slot else 'None' for slot in self.t_slots]))
 
     def assign_tables(self):
+        """Assigns teams to a particular table within a match."""
         for (time, rnd, teams) in [x for x in self.t_slots if x is not None]:
             for i in [j for j in range(len(teams)) if teams[j] is not None]:
                 self._team(teams[i]).add_event(time, self.t_duration[rnd], 5, i)
-        for t in self.teams:
+        for team in self.teams:
             rnd = 0
-            for event in [e for e in t.events if e[2] == 5]:
+            for event in [e for e in team.events if e[2] == 5]:
                 event[2] += rnd
                 rnd += 1
 
     def export(self):
+        """Exports schedule to an xlsx file; uses the tournament name for the file name."""
         time_fmt = ('%#I:%M %p' if sys.platform == "win32" else '%-I:%M %p')
         team_width = 3 if self.divisions else 2
-        wb = openpyxl.load_workbook(self.fpath)
+        workbook = openpyxl.load_workbook(self.fpath)
 
-        for sheet in [ws for ws in wb.sheetnames if ws != 'Team Information']:
-            del wb[sheet]
+        for sheet in [ws for ws in workbook.sheetnames if ws != 'Team Information']:
+            del workbook[sheet]
 
-        self._export_judge_views(wb, time_fmt, team_width)
-        self._export_table_views(wb, time_fmt, team_width)
-        self._export_team_views(wb, time_fmt, team_width)
+        self._export_judge_views(workbook, time_fmt, team_width)
+        self._export_table_views(workbook, time_fmt, team_width)
+        self._export_team_views(workbook, time_fmt)
 
         outfpath = os.path.join(os.path.dirname(self.fpath),
                                 self.tournament_name.lower().replace(' ', '_') + '_schedule')
         saved, count = False, 0
         while not saved:
             try:
-                wb.save('{}{}.xlsx'.format(outfpath, ' ({})'.format(count) if count else ''))
+                workbook.save('{}{}.xlsx'.format(outfpath, ' ({})'.format(count) if count else ''))
                 saved = True
             except PermissionError:
                 count += 1
         print('Schedule saved: {}{}.xlsx'.format(outfpath, ' ({})'.format(count) if count else ''))
 
-    def _export_judge_views(self, wb, time_fmt, team_width):
+    def _export_judge_views(self, workbook, time_fmt, team_width):
+        """Adds the four judging-focused sheets to the output workbook."""
         thin = styles.Side(border_style='thin', color='000000')
         thick = styles.Side(border_style='thick', color='000000')
 
-        ws_overall = wb.create_sheet("Judging Rooms")
-        cat_sheets = [wb.create_sheet(cat) for cat in self.event_names[:3]]
+        ws_overall = workbook.create_sheet("Judging Rooms")
+        cat_sheets = [workbook.create_sheet(cat) for cat in self.event_names[:3]]
 
         header_total, rooms_total = [], []
         for i in range(3):
@@ -288,69 +303,63 @@ class Tournament:
                 cat_sheets[i].append([line[0]] + line[i*team_width*self.j_sets + 1:
                                                       (i + 1)*team_width*self.j_sets + 1])
 
-        for ws in [ws_overall] + cat_sheets: #formatting
-            for row in ws.rows:
-                for cell in row:
-                    cell.alignment = styles.Alignment(horizontal='center')
-                    if (cell.column - 2) % (team_width*self.j_sets) == 0:
-                        cell.border = styles.Border(left=thick)
-                    elif (cell.column - 2) % team_width == 0 and cell.row > 1 + 2*self.j_calib:
-                        cell.border = styles.Border(left=thin)
-                row[0].alignment = styles.Alignment(horizontal='right')
+        for sheet in [ws_overall] + cat_sheets: #formatting
+            util.basic_ws_format(sheet, 4)
+            util.ws_borders(sheet, ((styles.Border(left=thick), team_width*self.j_sets, 2, 0),
+                                    (styles.Border(left=thin), team_width, 2, 1 + 2*self.j_calib)))
 
-            for i in range((len(list(ws.columns)) - 1) // (team_width*self.j_sets)):
-                ws.cell(row=1, column=team_width*self.j_sets*i + 2).font = styles.Font(bold=True)
-                ws.merge_cells(start_row=1, start_column=2 + i*team_width*self.j_sets,
-                               end_row=1, end_column=1 + (i + 1)*team_width*self.j_sets)
+            for i in range((len(list(sheet.columns)) - 1) // (team_width*self.j_sets)):
+                sheet.cell(row=1, column=team_width*self.j_sets*i + 2).font = styles.Font(bold=True)
+                sheet.merge_cells(start_row=1, start_column=2 + i*team_width*self.j_sets,
+                                  end_row=1, end_column=1 + (i + 1)*team_width*self.j_sets)
                 for j in range(self.j_sets):
-                    ws.merge_cells(start_row=2, start_column=team_width*(self.j_sets*i + j) + 2,
-                                   end_row=2, end_column=team_width*(self.j_sets*i + j + 1) + 1)
+                    sheet.merge_cells(start_row=2, start_column=team_width*(self.j_sets*i + j) + 2,
+                                      end_row=2, end_column=team_width*(self.j_sets*i + j + 1) + 1)
                 if self.j_calib:
-                    ws.merge_cells(start_row=3, start_column=2 + team_width*(self.j_sets*i + 1),
-                                   end_row=3, end_column=1 + team_width*(self.j_sets*(i + 1)))
-            self._basic_ws_format(ws, 4)
+                    sheet.merge_cells(start_row=3, start_column=2 + team_width*(self.j_sets*i + 1),
+                                      end_row=3, end_column=1 + team_width*(self.j_sets*(i + 1)))
 
-    def _export_table_views(self, wb, time_fmt, team_width):
+    def _export_table_views(self, workbook, time_fmt, team_width):
+        """Adds the competition table focused sheets to the output workbook."""
         thin = styles.Side(border_style='thin', color='000000')
         thick = styles.Side(border_style='thick', color='000000')
 
-        ws_overall = wb.create_sheet("Competition Tables")
+        sheet_overall = workbook.create_sheet("Competition Tables")
         header = sum([[tbl] + (team_width - 1)*[''] for tbl in self.rooms[5]], [''])
-        ws_overall.append(header)
-        t_pair_sheets = [wb.create_sheet(room[:-2]) for room in self.rooms[5][:2*self.t_pairs:2]]
+        sheet_overall.append(header)
+        t_pair_sheets = [workbook.create_sheet(room[:-2]) for room in self.rooms[5][::2]]
         for t_pair in range(self.t_pairs):
             t_pair_sheets[t_pair].append([''] + header[2*team_width*t_pair + 1:
                                                        2*team_width*(t_pair + 1)])
 
         for slot in self.t_slots:
             if slot is None:
-                for ws in t_pair_sheets + [ws_overall]:
-                    ws.append([''])
+                for sheet in t_pair_sheets + [sheet_overall]:
+                    sheet.append([''])
+            elif all([team == None for team in slot[2]]):
+                for sheet in t_pair_sheets + [sheet_overall]:
+                    sheet.append([slot[0].strftime(time_fmt)])
             else:
                 line = sum([(team_width - 1)*[''] + ['None'] if t is None else
                             self.teams[t].info(self.divisions) for t in slot[2]],
                            [slot[0].strftime(time_fmt)])
-                ws_overall.append(line)
+                sheet_overall.append(line)
                 for t_pair in range(self.t_pairs):
                     t_pair_sheets[t_pair].append([line[0]] + line[2*team_width*t_pair + 1:
                                                                   2*team_width*(t_pair + 1) + 1])
 
-        for ws in [ws_overall] + t_pair_sheets:
-            for row in ws.rows:
-                for cell in row:
-                    cell.alignment = styles.Alignment(horizontal='center')
-                    if (cell.column - 2) % (2*team_width) == 0:
-                        cell.border = styles.Border(left=thick)
-                    elif (cell.column - 2) % (2*team_width) == team_width:
-                        cell.border = styles.Border(left=thin)
-                row[0].alignment = styles.Alignment(horizontal='right')
-            for i in range(2, len(list(ws.columns)), team_width):
-                ws.merge_cells(start_row=1, start_column=i, end_row=1, end_column=i + team_width-1)
-            self._basic_ws_format(ws, 2)
+        for sheet in [sheet_overall] + t_pair_sheets:
+            util.basic_ws_format(sheet, 2)
+            util.ws_borders(sheet, ((styles.Border(left=thick), 2*team_width, 2, 0),
+                                    (styles.Border(left=thin), 2*team_width, 2 + team_width, 0)))
+            for i in range(2, len(list(sheet.columns)), team_width):
+                sheet.merge_cells(start_row=1, start_column=i,
+                                  end_row=1, end_column=i + team_width - 1)
 
-    def _export_team_views(self, wb, time_fmt, team_width):
-        ws_chron = wb.create_sheet("Team View (Chronological)")
-        ws_event = wb.create_sheet("Team View (Event)")
+    def _export_team_views(self, workbook, time_fmt):
+        """Adds event-sorted and time-sorted team-focused views to the output workbook."""
+        ws_chron = workbook.create_sheet("Team View (Chronological)")
+        ws_event = workbook.create_sheet("Team View (Event)")
         team_header = ['Team Number'] + (['Division'] if self.divisions else []) + ['Team Name']
         ws_chron.append(team_header + ['Event ' + str(i + 1) for i in range(len(self.event_names))])
         ws_event.append(team_header + self.event_names)
@@ -366,23 +375,15 @@ class Tournament:
                                for (time, length, cat, loc)
                                in sorted(team.events, key=lambda x: x[2])])
 
-        for ws in (ws_chron, ws_event):
-            self._basic_ws_format(ws)
-
-    def _basic_ws_format(self, ws, start=0):
-        """bolds the top row, stripes the rows, and sets column widths"""
-        for col in ws.columns:
-            col[0].font = styles.Font(bold=True)
-            length = 1.2*max(len(str(cell.value)) for cell in col[start:])
-            ws.column_dimensions[get_column_letter(col[0].column)].width = length
-        for row in list(ws.rows)[max(2, start - 1)::2]:
-            for cell in row:
-                cell.fill = styles.PatternFill('solid', fgColor='DDDDDD')
+        for sheet in (ws_chron, ws_event):
+            util.basic_ws_format(sheet)
 
     def _team(self, team_num):
+        """Returns the team at the specified internal index; wraps modularly."""
         return self.teams[team_num % self.num_teams]
 
     def read_data(self, fpath):
+        """Imports the team roster and scheduling settings from the input form."""
         dfs = pandas.read_excel(fpath, sheet_name=["Team Information", "Input Form"])
 
         team_sheet = dfs["Team Information"]
