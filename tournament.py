@@ -336,6 +336,9 @@ class Tournament:
             if slot is None:
                 for sheet in t_pair_sheets + [sheet_overall]:
                     sheet.append([''])
+            elif all([team == None for team in slot[2]]):
+                for sheet in t_pair_sheets + [sheet_overall]:
+                    sheet.append([slot[0].strftime(time_fmt)])
             else:
                 line = sum([(team_width - 1)*[''] + ['None'] if t is None else
                             self.teams[t].info(self.divisions) for t in slot[2]],
