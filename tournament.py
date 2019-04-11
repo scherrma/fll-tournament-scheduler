@@ -12,6 +12,7 @@ import openpyxl
 import openpyxl.styles as styles
 import scheduler.util as util
 from scheduler.team import Team
+import scheduler.min_cost
 
 class Tournament:
     """A class designed to create and export schedules for FLL qualifier tournaments."""
@@ -169,9 +170,8 @@ class Tournament:
 
     def assign_judge_times(self):
         """Determines when each judging session will happen and assigns teams to those slots."""
-        breaks = self.j_calib*[0] + [i if i + 1 < len(self.j_slots) else len(self.j_slots) for i in
-                                     range(self.j_calib, 1 + len(self.j_slots), self.j_consec)]\
-                                  + [len(self.j_slots)]
+        breaks = {0, len(self.j_slots)} | set(range(self.j_calib, len(self.j_slots), self.j_consec))
+        breaks = sorted(list(breaks))
         times = [[self.j_start + bool(j and self.j_calib)*self.travel
                   + max(i - self.j_calib, 0)*self.j_break + j*self.j_duration
                   for j in range(breaks[i], breaks[i+1] + 1)] for i in range(len(breaks) - 1)]
@@ -229,39 +229,31 @@ class Tournament:
 
             for match_size in next_matches:
                 timeslot = [t % self.num_teams for t in range(team, team + match_size)]
-                self.t_slots += [(time, rnd, timeslot)]
+                self.t_slots += [(time, rnd, util.rpad(timeslot, match_sizes[-1], None))]
                 team += match_size
                 time += self.t_duration[rnd]
         return time
-
-    def assign_tables(self):
-        """Assigns teams to a particular table within a match."""
-        previous_tables = {i: 2*self.t_pairs*[0] for i in range(self.num_teams)}
-        previous_tables[None] = 2*self.t_pairs*[0]
-
-        for (time, rnd, teams) in filter(None, self.t_slots):
-            matches = (x for x in set(itertools.permutations(util.rpad(teams, 2*self.t_pairs, None)))
-                       if len(teams) // 2 == sum((x[i] != None) and (x[i + 1] != None) 
-                                                 for i in range(0, len(x) - 1, 2)))
-
-            matches = ((sum([previous_tables[team][i] for i, team in enumerate(match)]), match)
-                        for match in matches)
-            teams[:] = min(matches, key=lambda x: x[0])[1]
-            for table, team in [(table, team) for table, team in enumerate(teams) if team != None]:
-                self._team(team).add_event(time, self.t_duration[rnd], 5, table)
-                previous_tables[team][table] += 1
-
-        for team in self.teams:
-            rnd = 0
-            table_count = len({e[3] for e in team.events if e[2] == 5})
-            for event in [e for e in team.events if e[2] == 5]:
-                event[2] += rnd
-                rnd += 1
+   
+    def assign_tables(self, assignment_passes=2):
+        prev_tables = [[0 for i in range(2*self.t_pairs)] for j in range(self.num_teams)]
+        for assign_pass in range(assignment_passes):
+            for(time, rnd, teams) in filter(None, self.t_slots):
+                if assign_pass:
+                    for table, team in filter(lambda x: x[1] != None, enumerate(teams)):
+                        prev_tables[team][table] -= 1
+                teams[:] = util.rpad(scheduler.min_cost.min_cost(teams, prev_tables),
+                                     2*self.t_pairs, None)
+                for table, team in filter(lambda x: x[1] != None, enumerate(teams)):
+                    prev_tables[team][table] += 1
+                    if assign_pass + 1 == assignment_passes:
+                        team_rnd = sum(1 for event in self._team(team).events if event[2] > 4)
+                        self._team(team).add_event(time, self.t_duration[rnd], 5 + team_rnd, table)
+        t_rounds = len(self.event_names[5:])
 
     def export(self):
         """Exports schedule to an xlsx file; uses the tournament name for the file name."""
         time_fmt = ('%#I:%M %p' if sys.platform == "win32" else '%-I:%M %p')
-        team_width = 3 if self.divisions else 2
+        team_width = len(self.teams[0].info(self.divisions))
         workbook = openpyxl.load_workbook(self.fpath)
 
         for sheet in [ws for ws in workbook.sheetnames if ws != 'Team Information']:
@@ -309,8 +301,8 @@ class Tournament:
                 teams = [[None if t is None else self.teams[t] for t in cat] for cat in teams]
                 if len(teams[0]) == 1 and self.j_calib:
                     line += sum([teams[i][0].info(self.divisions)
-                                 + ["all {} judges in {}".format(self.event_names[i].lower(),
-                                                                 self.rooms[i][0])]
+                                 + ["all {} judges in {}".format(self.event_names[i + 2].lower(),
+                                                                 self.rooms[i + 2][0])]
                                  + (team_width*(self.j_sets - 1) - 1)*[''] for i in range(3)], [])
                 else:
                     line += sum([['']*(team_width - 1) + ['None'] if team is None else
