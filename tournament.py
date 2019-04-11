@@ -4,7 +4,6 @@ from datetime import datetime, timedelta
 import math
 import os
 import sys
-import itertools
 import tkinter
 from tkinter import filedialog
 import pandas
@@ -59,7 +58,41 @@ class Tournament:
             os.system("pause")
 
     def schedule_interlaced(self):
-        """Generates judging and table schedules using interlaced scheduling."""
+        """Top-level function controlling judge and table schedules for interlaced tournaments."""
+        self.judge_interlaced()
+
+        time_start = [e_start + e_length + self.travel for (e_start, e_length, *_)
+                      in self.teams[3*self.j_calib].events]
+        time_start = sorted([t for t in time_start if t >= self.j_start])
+        time_start = next((time for time in time_start if self.teams[3*self.j_calib]
+                           .available(time, self.t_duration[0], self.travel)))
+        team_idx = next((t for t in range(3*self.j_calib + 1) if
+                         self._team(t).available(time_start, self.t_duration[0], self.travel)))
+
+        run_rate = 3*self.j_sets*self.t_duration[0]/(self.j_duration + self.j_break/self.j_consec)
+
+        min_early_run_rate = max(2, 2*math.ceil(run_rate/2))
+        if self.num_teams % min_early_run_rate:
+            early_avail = [self._team(team_idx - i).available(time_start - self.t_duration[0],
+                                                              self.t_duration[0], self.travel)
+                           for i in range(min_early_run_rate)]
+            if all(early_avail):
+                team_idx -= len(early_avail)
+                time_start -= self.t_duration[0]
+
+        self.t_slots = []
+        t_rounds = len(self.event_names) - 5
+        time_start = self.schedule_matches(time_start, team_idx, (0, 1)[:t_rounds], run_rate)
+        if t_rounds > 1:
+            self.t_slots += [None]
+            time_restart = [sum(self._team(t).events[-1][:2], self.travel
+                                - t // (2*self.t_pairs) * self.t_duration[2])
+                            for t in range(self.num_teams)]
+            time_start = max(time_restart + [time_start + self.t_lunch_duration])
+            self.schedule_matches(time_start, 0, range(2, t_rounds), None)
+
+    def judge_interlaced(self):
+        """Generates the judging schedule for tournaments using interlaced scheduling."""
         self.j_calib = self.j_calib and not self.divisions
 
         max_room = max([math.ceil(len(teams) / rooms) for teams, rooms in self.divs])
@@ -94,37 +127,6 @@ class Tournament:
         if self.j_calib:
             self.j_slots = [([0], [1], [2])] + self.j_slots
         self.assign_judge_times()
-
-        #table scheduling
-        time_start = [e_start + e_length + self.travel for (e_start, e_length, *_)
-                      in self.teams[3*self.j_calib].events]
-        time_start = sorted([t for t in time_start if t >= self.j_start])
-        time_start = next((time for time in time_start if self.teams[3*self.j_calib]
-                           .available(time, self.t_duration[0], self.travel)))
-        team_idx = next((t for t in range(3*self.j_calib + 1) if
-                         self._team(t).available(time_start, self.t_duration[0], self.travel)))
-
-        run_rate = 3*self.j_sets*self.t_duration[0]/(self.j_duration + self.j_break/self.j_consec)
-
-        min_early_run_rate = max(2, 2*math.ceil(run_rate/2))
-        if self.num_teams % min_early_run_rate:
-            early_avail = [self._team(team_idx - i).available(time_start - self.t_duration[0],
-                                                              self.t_duration[0], self.travel)
-                           for i in range(min_early_run_rate)]
-            if all(early_avail):
-                team_idx -= len(early_avail)
-                time_start -= self.t_duration[0]
-
-        self.t_slots = []
-        t_rounds = len(self.event_names) - 5
-        time_start = self.schedule_matches(time_start, team_idx, (0, 1)[:t_rounds], run_rate)
-        if t_rounds > 1:
-            self.t_slots += [None]
-            time_restart = [sum(self._team(t).events[-1][:2], self.travel 
-                                 - t // (2*self.t_pairs) * self.t_duration[2])
-                            for t in range(self.num_teams)]
-            time_start = max(time_restart + [time_start + self.t_lunch_duration])
-            self.schedule_matches(time_start, 0, range(2, t_rounds), None)
 
     def schedule_block(self):
         """Generates judging and table schedules using block scheduling."""
@@ -233,22 +235,22 @@ class Tournament:
                 team += match_size
                 time += self.t_duration[rnd]
         return time
-   
+
     def assign_tables(self, assignment_passes=2):
+        """Reorders the teams in self.t_slots to minimize table repetition for teams."""
         prev_tables = [[0 for i in range(2*self.t_pairs)] for j in range(self.num_teams)]
         for assign_pass in range(assignment_passes):
             for(time, rnd, teams) in filter(None, self.t_slots):
                 if assign_pass:
-                    for table, team in filter(lambda x: x[1] != None, enumerate(teams)):
+                    for table, team in filter(lambda x: x[1] is not None, enumerate(teams)):
                         prev_tables[team][table] -= 1
                 teams[:] = util.rpad(scheduler.min_cost.min_cost(teams, prev_tables),
                                      2*self.t_pairs, None)
-                for table, team in filter(lambda x: x[1] != None, enumerate(teams)):
+                for table, team in filter(lambda x: x[1] is not None, enumerate(teams)):
                     prev_tables[team][table] += 1
                     if assign_pass + 1 == assignment_passes:
                         team_rnd = sum(1 for event in self._team(team).events if event[2] > 4)
                         self._team(team).add_event(time, self.t_duration[rnd], 5 + team_rnd, table)
-        t_rounds = len(self.event_names[5:])
 
     def export(self):
         """Exports schedule to an xlsx file; uses the tournament name for the file name."""
@@ -345,7 +347,7 @@ class Tournament:
             if slot is None:
                 for sheet in t_pair_sheets + [sheet_overall]:
                     sheet.append([''])
-            elif all([team == None for team in slot[2]]):
+            elif all([team is None for team in slot[2]]):
                 for sheet in t_pair_sheets + [sheet_overall]:
                     sheet.append([slot[0].strftime(time_fmt)])
             else:
@@ -428,7 +430,7 @@ class Tournament:
             self.j_sets = param["j_sets"]
             self.rooms = [[param["coach_room"]], [param["opening_room"]]]
             self.rooms += [self.param_sheet.loc[key].dropna().values.tolist()[1:]
-                          for key in ("j_project_rooms", "j_robot_rooms", "j_values_rooms")]
+                           for key in ("j_project_rooms", "j_robot_rooms", "j_values_rooms")]
             self.j_calib = (param["j_calib"] == "Yes")
             self.j_duration = timedelta(minutes=param["j_duration"])
             self.j_duration_team = timedelta(minutes=10)
