@@ -1,7 +1,7 @@
 #  !/usr/bin/env python3
 """Utility functions for the fll tournament scheduler."""
 import openpyxl
-def sum_to(options, goal, picks):
+def sum_to(options, goal, picks, force_take_all=False):
     """Returns numbers that sum as close to a goal value as possible.
 
     options -- the numbers to select from
@@ -15,6 +15,8 @@ def sum_to(options, goal, picks):
             select += [min(options, key=lambda x: abs(x-goal/picks))]
             picks -= 1
             goal -= select[-1]
+        if force_take_all and max(options) - select[-1] >= goal:
+            select[-1] += goal
     return select
 
 def nth_occurence(ls, val, n):

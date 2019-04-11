@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 import math
 import os
 import sys
+import itertools
 import tkinter
 from tkinter import filedialog
 import pandas
@@ -33,8 +34,8 @@ class Tournament:
             print("Reading data")
             self.read_data(self.fpath)
             for team in self.teams:
-                team.add_event(*self.coach_meet, 3, 0)
-                team.add_event(*self.opening, 4, 0)
+                team.add_event(*self.coach_meet, 0, 0)
+                team.add_event(*self.opening, 1, 0)
 
             print("Starting judge scheduling")
             self.split_divisions()
@@ -102,9 +103,7 @@ class Tournament:
         team_idx = next((t for t in range(3*self.j_calib + 1) if
                          self._team(t).available(time_start, self.t_duration[0], self.travel)))
 
-        round_split = [(0, 1), range(2, len(self.event_names) - 5)]
         run_rate = 3*self.j_sets*self.t_duration[0]/(self.j_duration + self.j_break/self.j_consec)
-        break_times = (self.t_lunch_duration, None)
 
         min_early_run_rate = max(2, 2*math.ceil(run_rate/2))
         if self.num_teams % min_early_run_rate:
@@ -115,7 +114,16 @@ class Tournament:
                 team_idx -= len(early_avail)
                 time_start -= self.t_duration[0]
 
-        self.schedule_matches(time_start, team_idx, zip(round_split, (run_rate, None), break_times))
+        self.t_slots = []
+        t_rounds = len(self.event_names) - 5
+        time_start = self.schedule_matches(time_start, team_idx, (0, 1)[:t_rounds], run_rate)
+        if t_rounds > 1:
+            self.t_slots += [None]
+            time_restart = [sum(self._team(t).events[-1][:2], self.travel 
+                                 - t // (2*self.t_pairs) * self.t_duration[2])
+                            for t in range(self.num_teams)]
+            time_start = max(time_restart + [time_start + self.t_lunch_duration])
+            self.schedule_matches(time_start, 0, range(2, t_rounds), None)
 
     def schedule_block(self):
         """Generates judging and table schedules using block scheduling."""
@@ -179,68 +187,73 @@ class Tournament:
         for breaktime in breaks[-2:0:-1]:
             self.j_slots.insert(breaktime, None)
         self.j_slots = list(zip(times, self.j_slots))
-        for time, teams in [(time, teams) for time, teams in self.j_slots if teams is not None]:
+        for time, teams in filter(lambda x: x[1] is not None, self.j_slots):
             for cat, cat_teams in enumerate(teams):
-                for room, team in [(r, t) for (r, t) in enumerate(cat_teams) if t is not None]:
-                    self.teams[team].add_event(time, self.j_duration_team, cat, room)
+                for room, team in filter(lambda x: x[1] is not None, enumerate(cat_teams)):
+                    self.teams[team].add_event(time, self.j_duration_team, cat + 2, room)
 
-    def schedule_matches(self, time, team, round_info):
+    def schedule_matches(self, time, team, rounds, run_rate):
         """Determines when table matches will occur and assigns teams to matches."""
         def avail(start, rnd):
             return [(t, self._team(start + t).available(time, self.t_duration[rnd], self.travel))
                     for t in range(self.num_teams)]
-        self.t_slots = []
-        t_idle = 0
         start_team = team
-        for (rounds, run_rate, break_time) in round_info:
-            if run_rate is None or run_rate > 2*self.t_pairs:
-                run_rate = 2*self.t_pairs
-            run_rate = 2*math.ceil(run_rate/2)
+        if run_rate is None:
+            match_sizes = [2*self.t_pairs]
+        else:
+            run_rate = 2*min(math.ceil(run_rate/2), self.t_pairs)
             match_sizes = [max(2, run_rate - 2), run_rate]
 
-            team = next((t for t, free in avail(0, 0) if free))
-            start_team = team
+        while team < len(rounds)*self.num_teams + start_team:
+            rnd = rounds[(team - start_team) // self.num_teams]
+            max_teams = next((t for t, free in avail(team, rnd) if not free),
+                             len(rounds)*self.num_teams)
+            max_matches = (self._team(team).next_event(time)[0] - time - self.travel)\
+                    // self.t_duration[rnd]
 
-            while team < len(rounds)*self.num_teams + start_team:
-                rnd = rounds[(team - start_team) // self.num_teams]
-                max_teams = next((t for t, free in avail(team, rnd) if not free),
-                                 len(rounds)*self.num_teams)
-                max_teams = min(util.round_up_to(self.num_teams - (team - start_team) % self.num_teams,
-                                match_sizes[-1]), max_teams)
-                max_matches = (self._team(team).next_event(time)[0] - time - self.travel)\
-                        // self.t_duration[rnd]
+            if team + max_teams >= len(rounds)*self.num_teams + start_team:
+                max_teams = len(rounds)*self.num_teams + start_team - team
+                max_matches = min(max_matches, math.ceil(max_teams / match_sizes[-1]))
+            else:
+                max_matches = min(math.ceil((len(rounds)*self.num_teams + start_team - team)
+                                            / match_sizes[-1]), max_matches)
+                max_teams -= max_teams % 2
 
-                if team + max_teams >= len(rounds)*self.num_teams + start_team:
-                    max_teams = len(rounds)*self.num_teams + start_team - team
-                    max_matches = min(max_matches, math.ceil(max_teams / match_sizes[-1]))
-                else:
-                    max_matches = min(max_matches, 
-                                      math.ceil((len(rounds)*self.num_teams + start_team - team)
-                                                / match_sizes[-1]))
-                    max_teams -= max_teams % 2
+            if max_matches == 0:
+                time += self.t_duration[rnd]
 
-                for match_size in util.sum_to(match_sizes, max_teams, max_matches):
-                    timeslot = [i % self.num_teams for i in range(team, team + match_size)]
-                    if match_size < match_sizes[-1]:
-                        timeslot[t_idle:t_idle] = (match_sizes[-1] - match_size)*[None]
-                        t_idle = (t_idle + 2) % match_sizes[-1]
-                    timeslot += (2*self.t_pairs - match_sizes[-1])*[None]
-                    self.t_slots += [(time, rnd, timeslot)]
-                    team += match_size
-                    time += self.t_duration[rnd]
-                if max_matches == 0:
-                    time += self.t_duration[rnd]
-            if break_time is not None:
-                time += break_time
-                self.t_slots += [None]
+            next_matches = util.sum_to(match_sizes, max_teams, max_matches, force_take_all=
+                                       team + max_teams - start_team >= len(rounds)*self.num_teams)
+            while sum(next_matches[:-1]) + (team - start_team) % self.num_teams > self.num_teams:
+                next_matches.pop()
+
+            for match_size in next_matches:
+                timeslot = [t % self.num_teams for t in range(team, team + match_size)]
+                self.t_slots += [(time, rnd, timeslot)]
+                team += match_size
+                time += self.t_duration[rnd]
+        return time
 
     def assign_tables(self):
         """Assigns teams to a particular table within a match."""
-        for (time, rnd, teams) in [x for x in self.t_slots if x is not None]:
-            for i in [j for j in range(len(teams)) if teams[j] is not None]:
-                self._team(teams[i]).add_event(time, self.t_duration[rnd], 5, i)
+        previous_tables = {i: 2*self.t_pairs*[0] for i in range(self.num_teams)}
+        previous_tables[None] = 2*self.t_pairs*[0]
+
+        for (time, rnd, teams) in filter(None, self.t_slots):
+            matches = (x for x in set(itertools.permutations(util.rpad(teams, 2*self.t_pairs, None)))
+                       if len(teams) // 2 == sum((x[i] != None) and (x[i + 1] != None) 
+                                                 for i in range(0, len(x) - 1, 2)))
+
+            matches = ((sum([previous_tables[team][i] for i, team in enumerate(match)]), match)
+                        for match in matches)
+            teams[:] = min(matches, key=lambda x: x[0])[1]
+            for table, team in [(table, team) for table, team in enumerate(teams) if team != None]:
+                self._team(team).add_event(time, self.t_duration[rnd], 5, table)
+                previous_tables[team][table] += 1
+
         for team in self.teams:
             rnd = 0
+            table_count = len({e[3] for e in team.events if e[2] == 5})
             for event in [e for e in team.events if e[2] == 5]:
                 event[2] += rnd
                 rnd += 1
@@ -275,12 +288,12 @@ class Tournament:
         thick = styles.Side(border_style='thick', color='000000')
 
         ws_overall = workbook.create_sheet("Judging Rooms")
-        cat_sheets = [workbook.create_sheet(cat) for cat in self.event_names[:3]]
+        cat_sheets = [workbook.create_sheet(cat) for cat in self.event_names[2:5]]
 
         header_total, rooms_total = [], []
         for i in range(3):
-            header_part = [self.event_names[i]] + (self.j_sets*team_width - 1)*['']
-            rooms_part = sum([[room] + (team_width - 1)*[''] for room in self.rooms[i]], [])
+            header_part = [self.event_names[i + 2]] + (self.j_sets*team_width - 1)*['']
+            rooms_part = sum([[room] + (team_width - 1)*[''] for room in self.rooms[i + 2]], [])
 
             header_total += header_part
             rooms_total += rooms_part
@@ -411,8 +424,8 @@ class Tournament:
             self.tournament_name = param["tournament_name"]
             self.scheduling_method = param["scheduling_method"]
             self.travel = timedelta(minutes=param["travel_time"])
-            self.event_names = ['Project', 'Robot Design', 'Core Values', "Coaches' Meeting",
-                                "Opening Ceremonies"]
+            self.event_names = ["Coaches' Meeting", "Opening Ceremonies", 'Project', 'Robot Design',
+                                'Core Values']
             self.event_names += self.param_sheet.loc["t_round_names"].dropna().values.tolist()[1:]
             self.coach_meet = (datetime.combine(datetime(1, 1, 1), param["coach_start"]),
                                timedelta(minutes=param["coach_duration"]))
@@ -421,9 +434,9 @@ class Tournament:
 
             self.j_start = datetime.combine(datetime(1, 1, 1), param["j_start"])
             self.j_sets = param["j_sets"]
-            self.rooms = [self.param_sheet.loc[key].dropna().values.tolist()[1:]
+            self.rooms = [[param["coach_room"]], [param["opening_room"]]]
+            self.rooms += [self.param_sheet.loc[key].dropna().values.tolist()[1:]
                           for key in ("j_project_rooms", "j_robot_rooms", "j_values_rooms")]
-            self.rooms += [[param["coach_room"]], [param["opening_room"]]]
             self.j_calib = (param["j_calib"] == "Yes")
             self.j_duration = timedelta(minutes=param["j_duration"])
             self.j_duration_team = timedelta(minutes=10)
