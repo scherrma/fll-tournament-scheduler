@@ -240,7 +240,8 @@ class Tournament:
         """Reorders the teams in self.t_slots to minimize table repetition for teams."""
         prev_tables = [[0 for i in range(2*self.t_pairs)] for j in range(self.num_teams)]
         def cost(order):
-            return sum(prev_tables[team][table] for table, team in enumerate(order) if team is not None)
+            return sum(prev_tables[team][table] for table, team in enumerate(order)
+                       if team is not None)
 
         for assign_pass in range(assignment_passes):
             for(time, rnd, teams) in filter(None, self.t_slots):
@@ -248,11 +249,11 @@ class Tournament:
                     for table, team in filter(lambda x: x[1] is not None, enumerate(teams)):
                         prev_tables[team][table] -= 1
 
-                teams[:] = util.rpad(scheduler.min_cost.min_cost(teams, cost),
-                                     2*self.t_pairs, None)
+                teams[:] = scheduler.min_cost.min_cost(teams, cost)
                 for table, team in filter(lambda x: x[1] is not None, enumerate(teams)):
                     prev_tables[team][table] += 1
                     if assign_pass + 1 == assignment_passes:
+                        teams[:] = util.rpad(teams, 2*self.t_pairs, None)
                         team_rnd = sum(1 for event in self._team(team).events if event[2] > 4)
                         self._team(team).add_event(time, self.t_duration[rnd], 5 + team_rnd, table)
 
