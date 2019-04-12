@@ -248,7 +248,6 @@ class Tournament:
                 if assign_pass:
                     for table, team in filter(lambda x: x[1] is not None, enumerate(teams)):
                         prev_tables[team][table] -= 1
-
                 teams[:] = scheduler.min_cost.min_cost(teams, cost)
                 for table, team in filter(lambda x: x[1] is not None, enumerate(teams)):
                     prev_tables[team][table] += 1
@@ -319,8 +318,14 @@ class Tournament:
                 cat_sheets[i].append([line[0]] + line[i*team_width*self.j_sets + 1:
                                                       (i + 1)*team_width*self.j_sets + 1])
 
+        col_sizes = [1 + max(len(str(text)) for text in cat) for cat in 
+                     zip(*[team.info(self.divisions) for team in self.teams])]
         for sheet in [ws_overall] + cat_sheets: #formatting
             util.basic_ws_format(sheet, 4)
+            for col in sheet.columns:
+                if col[0].column > 1:
+                    sheet.column_dimensions[openpyxl.utils.get_column_letter(col[0].column)].width =\
+                            col_sizes[(col[0].column - 2) % len(col_sizes)]
             util.ws_borders(sheet, ((styles.Border(left=thick), team_width*self.j_sets, 2, 0),
                                     (styles.Border(left=thin), team_width, 2, 1 + 2*self.j_calib)))
 
@@ -364,8 +369,14 @@ class Tournament:
                     t_pair_sheets[t_pair].append([line[0]] + line[2*team_width*t_pair + 1:
                                                                   2*team_width*(t_pair + 1) + 1])
 
+        col_sizes = [1 + max(len(str(text)) for text in cat) for cat in 
+                     zip(*[team.info(self.divisions) for team in self.teams])]
         for sheet in [sheet_overall] + t_pair_sheets:
             util.basic_ws_format(sheet, 2)
+            for col in sheet.columns:
+                if col[0].column > 1:
+                    sheet.column_dimensions[openpyxl.utils.get_column_letter(col[0].column)].width =\
+                            col_sizes[(col[0].column - 2) % len(col_sizes)]
             util.ws_borders(sheet, ((styles.Border(left=thick), 2*team_width, 2, 0),
                                     (styles.Border(left=thin), 2*team_width, 2 + team_width, 0)))
             for i in range(2, len(list(sheet.columns)), team_width):
