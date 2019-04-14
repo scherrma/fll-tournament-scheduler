@@ -7,17 +7,17 @@ def sum_to(options, goal, picks, force_take_all=False):
     options -- the numbers to select from
     goal -- the value to attempt to sum to
     picks -- the length of the list to be returned"""
-    select = []
+    selected = []
     if goal < min(options):
-        select = [goal]
+        selected = [goal]
     else:
         while goal >= min(options) and picks > 0:
-            select += [min(options, key=lambda x: abs(x-goal/picks))]
+            selected += [min(options, key=lambda x: abs(x - goal/picks))] #pick near the average
+            goal -= selected[-1]
             picks -= 1
-            goal -= select[-1]
-        if force_take_all and max(options) - select[-1] >= goal:
-            select[-1] += goal
-    return select
+        if force_take_all and max(options) - selected[-1] >= goal:
+            selected[-1] += goal
+    return selected
 
 def nth_occurence(ls, val, n):
     """Returns the index of the nth occurance of a value in a list."""

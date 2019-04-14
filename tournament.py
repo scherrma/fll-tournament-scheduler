@@ -240,7 +240,7 @@ class Tournament:
         """Reorders the teams in self.t_slots to minimize table repetition for teams."""
         prev_tables = [[0 for i in range(2*self.t_pairs)] for j in range(self.num_teams)]
         def cost(order):
-            return sum(prev_tables[team][table] for table, team in enumerate(order)
+            return sum(prev_tables[team][table]**1.1 for table, team in enumerate(order)
                        if team is not None)
 
         for assign_pass in range(assignment_passes):
