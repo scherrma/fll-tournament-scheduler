@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""A module containing the Tournament class for using in creating FLL qualifier schedules."""
+"""A module containing a Tournament class for using in creating FLL qualifier schedules."""
 from datetime import timedelta
 import math
 import scheduler.util as util
@@ -9,31 +9,26 @@ import scheduler.min_cost
 class Tournament:
     """A class designed to create schedules for FLL qualifier tournaments."""
     def __init__(self, teams, divisions, scheduling_method, travel, coach_meet, opening, j_start,
-                 j_sets, j_calib, j_duration, j_duration_team, j_consec, j_break, j_lunch,
-                 j_lunch_duration, t_rounds, t_pairs, t_duration, t_lunch, t_lunch_duration):
+                 j_sets, j_calib, j_duration, j_break, j_lunch, t_rounds, t_pairs, t_duration, t_lunch):
         """Creates a tournament and requests a roster/settings file if one was not provided."""
         self.teams = [Team(*x) for x in teams]
         self.num_teams = len(self.teams)
         self.divisions = divisions
         self.scheduling_method = scheduling_method
         self.travel = travel
-        self.coach_meet = coach_meet
-        self.opening = opening
+        self.coach_meet = coach_meet #first element is start time; second is duration
+        self.opening = opening #first element is start time; second is duration
         self.j_start = j_start
         self.j_sets = j_sets
         self.j_calib = j_calib
-        self.j_duration = j_duration
-        self.j_duration_team = j_duration_team
-        self.j_consec = j_consec
-        self.j_break = j_break
-        self.j_lunch = j_lunch
-        self.j_lunch_duration = j_lunch_duration
+        self.j_duration = j_duration #first element is for judges; second is for teams
+        self.j_break = j_break #first element is sessions between breaks; second is break duration
+        self.j_lunch = j_lunch #first element is start time; second is duration
 
         self.t_rounds = t_rounds
         self.t_pairs = t_pairs
         self.t_duration = t_duration
-        self.t_lunch = t_lunch
-        self.t_lunch_duration = t_lunch_duration
+        self.t_lunch = t_lunch #first element is start time; second is duration
 
         self.divs = []
         self.j_slots = []
@@ -68,7 +63,7 @@ class Tournament:
         team_idx = next((t for t in range(3*self.j_calib + 1) if
                          self._team(t).available(time_start, self.t_duration[0], self.travel)))
 
-        run_rate = 3*self.j_sets*self.t_duration[0]/(self.j_duration + self.j_break/self.j_consec)
+        run_rate = 3*self.j_sets*self.t_duration[0]/(self.j_duration[0] + self.j_break[1]/self.j_break[0])
 
         min_early_run_rate = max(2, 2*math.ceil(run_rate/2))
         if self.num_teams % min_early_run_rate:
@@ -86,7 +81,7 @@ class Tournament:
             time_restart = [sum(self._team(t).events[-1][:2], self.travel
                                 - t // (2*self.t_pairs) * self.t_duration[2])
                             for t in range(self.num_teams)]
-            time_start = max(time_restart + [time_start + self.t_lunch_duration])
+            time_start = max(time_restart + [time_start + self.t_lunch[1]])
             self.schedule_matches(time_start, 0, range(2, self.t_rounds), None)
 
     def judge_interlaced(self):
@@ -170,17 +165,16 @@ class Tournament:
 
     def assign_judge_times(self):
         """Determines when each judging session will happen and assigns teams to those slots."""
-        breaks = {0, len(self.j_slots)} | set(range(self.j_calib, len(self.j_slots), self.j_consec))
+        breaks = {0, len(self.j_slots)} | set(range(self.j_calib, len(self.j_slots), self.j_break[0]))
         breaks = sorted(list(breaks))
         times = [[self.j_start + bool(j and self.j_calib)*self.travel
-                  + max(i - self.j_calib, 0)*self.j_break + j*self.j_duration
+                  + max(i - self.j_calib, 0)*self.j_break[1] + j*self.j_duration[0]
                   for j in range(breaks[i], breaks[i+1] + 1)] for i in range(len(breaks) - 1)]
-        j_blockers = [(self.j_lunch, self.j_lunch_duration)]\
-                   + [(start - self.travel, duration + 2*self.travel) for start, duration in
-                      (self.opening, self.coach_meet)]
+        j_blockers = [self.j_lunch] + [(start - self.travel, duration + 2*self.travel) 
+                      for start, duration in (self.opening, self.coach_meet)]
         for start, length in sorted(j_blockers):
             delay = max(timedelta(0), min(length, start + length - times[0][0]))
-            delay -= self.j_break if start >= times[0][-1] else timedelta(0)
+            delay -= self.j_break[1] if start >= times[0][-1] else timedelta(0)
             times = [[time + (start < cycle[-1])*delay for time in cycle] for cycle in times]
         times = [time for cycle in times for time in cycle]
 
@@ -190,7 +184,7 @@ class Tournament:
         for time, teams in filter(lambda x: x[1] is not None, self.j_slots):
             for cat, cat_teams in enumerate(teams):
                 for room, team in filter(lambda x: x[1] is not None, enumerate(cat_teams)):
-                    self.teams[team].add_event(time, self.j_duration_team, cat + 2, room)
+                    self.teams[team].add_event(time, self.j_duration[1], cat + 2, room)
 
     def schedule_matches(self, time, team, rounds, run_rate):
         """Determines when table matches will occur and assigns teams to matches."""
