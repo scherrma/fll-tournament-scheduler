@@ -235,8 +235,8 @@ def generate_schedule():
     if len(sys.argv) == 1:
         root = tkinter.Tk()
         root.withdraw()
-        fpath = filedialog.askopenfilename(
-            filetypes=[("Excel files (*.xls, *.xlsm, *.xlsx)", "*.xls *.xlsm *.xlsx")])
+        fpath = filedialog.askopenfilename(initialdir=os.path.dirname(os.path.abspath(__file__)),
+                                           filetypes=[("Excel files", "*.xls *.xlsm *.xlsx")])
         root.destroy()
     elif len(sys.argv) == 2:
         fpath = sys.argv[1]
@@ -263,8 +263,8 @@ def generate_schedule():
         print('Schedule saved: {}'.format(final_fout))
 
     except Exception as excep:
-        #raise excep
-        print(excep)
+        raise excep
+        #print(excep)
 
     if sys.platform in ["win32", "darwin"]:
         os.system("pause")
