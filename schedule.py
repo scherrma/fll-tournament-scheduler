@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 import os
 import sys
 import tkinter
+from tkinter import filedialog
 import pandas
 import openpyxl
 import openpyxl.styles as styles
@@ -234,7 +235,7 @@ def generate_schedule():
     if len(sys.argv) == 1:
         root = tkinter.Tk()
         root.withdraw()
-        fpath = tkinter.filedialog.askopenfilename(
+        fpath = filedialog.askopenfilename(
             filetypes=[("Excel files (*.xls, *.xlsm, *.xlsx)", "*.xls *.xlsm *.xlsx")])
         root.destroy()
     elif len(sys.argv) == 2:
@@ -262,8 +263,8 @@ def generate_schedule():
         print('Schedule saved: {}'.format(final_fout))
 
     except Exception as excep:
-        raise excep
-        #print(excep)
+        #raise excep
+        print(excep)
 
     if sys.platform in ["win32", "darwin"]:
         os.system("pause")
