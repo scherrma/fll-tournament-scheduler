@@ -35,7 +35,8 @@ def basic_ws_format(ws, start=0):
     """bolds the top row, stripes the rows, and sets column widths"""
     for col in ws.columns:
         col[0].font = openpyxl.styles.Font(bold=True)
-        length = 5 + max(len(str(cell.value)) for cell in col[start:])
+        length = 2 + max((len(str(cell.value)) for cell in col[start:]
+                          if cell.value and str(cell.value)[0] != '='), default=0)
         ws.column_dimensions[openpyxl.utils.get_column_letter(col[0].column)].width = length
     for row in list(ws.rows):
         row[0].alignment = openpyxl.styles.Alignment(horizontal='right')

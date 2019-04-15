@@ -312,7 +312,7 @@ class Tournament:
                                  + (team_width*(self.j_sets - 1) - 1)*[''] for i in range(3)], [])
                 else:
                     line += sum([['']*(team_width - 1) + ['None'] if team is None else
-                                 team.info(self.divisions) for cat in teams for team in cat], [])
+                                 [team.num] + self.team_info for cat in teams for team in cat], [])
             ws_overall.append(line)
             for i in range(3):
                 cat_sheets[i].append([line[0]] + line[i*team_width*self.j_sets + 1:
@@ -362,7 +362,7 @@ class Tournament:
                     sheet.append([slot[0].strftime(time_fmt)])
             else:
                 line = sum([(team_width - 1)*[''] + ['None'] if t is None else
-                            self.teams[t].info(self.divisions) for t in slot[2]],
+                            [self.teams[t].num] + self.team_info for t in slot[2]],
                            [slot[0].strftime(time_fmt)])
                 sheet_overall.append(line)
                 for t_pair in range(self.t_pairs):
@@ -389,21 +389,25 @@ class Tournament:
         ws_event = workbook.create_sheet("Team View (Event)")
         team_header = ['Team Number'] + (['Division'] if self.divisions else []) + ['Team Name']
         ws_chron.append(team_header + ['Event ' + str(i + 1) for i in range(len(self.event_names))])
-        ws_event.append(team_header + self.event_names)
+        ws_event.append(team_header + self.event_names[2:])
 
         for team in sorted(self.teams, key=lambda t: t.num):
-            ws_chron.append(team.info(self.divisions)
+            ws_chron.append([team.num] + self.team_info
                             + ['{} at {}, {}'.format(self.event_names[cat], time.strftime(time_fmt),
                                                      self.rooms[min(5, cat)][loc])
                                for (time, duration, cat, loc) in team.events])
-            ws_event.append(team.info(self.divisions)
+            ws_event.append([team.num] + self.team_info
                             + ['{}, {}'.format(time.strftime(time_fmt),
                                                self.rooms[min(5, cat)][loc])
                                for (time, length, cat, loc)
-                               in sorted(team.events, key=lambda x: x[2])])
+                               in sorted(team.events, key=lambda x: x[2])[2:]])
 
+        col_size = 1 + max(len(team.name) for team in self.teams)
         for sheet in (ws_chron, ws_event):
             util.basic_ws_format(sheet)
+            for col in sheet.columns:
+                if col[0].column == 2 + self.divisions:
+                    sheet.column_dimensions[openpyxl.utils.get_column_letter(col[0].column)].width = col_size
 
     def _team(self, team_num):
         """Returns the team at the specified internal index; wraps modularly."""
@@ -420,6 +424,13 @@ class Tournament:
             if self.divisions:
                 column_check += ["Division"]
             self.teams = [Team(*x) for x in team_sheet.loc[:, column_check].values]
+            team_info_base = [(i, list(team_sheet.columns).index(cat) + 1) for i, cat in 
+                              list(enumerate(column_check[::-1]))]
+            self.team_info = ["=index(indirect(\"'Team Information'!C{1}\", false),"\
+                               "match(indirect(\"RC[-{2}]\", false), "\
+                               "indirect(\"'Team Information'!C{0}\", false), 0))"
+                               .format(team_info_base[-1][1], cat, offset + 1) for offset, cat
+                               in team_info_base[:-1]]
         else:
             raise KeyError("Could not find columns 'Team Number' and 'Team' in 'Team Information'")
 
