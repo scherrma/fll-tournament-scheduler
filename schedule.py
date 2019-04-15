@@ -82,7 +82,7 @@ def export(tment, workbook, team_info, event_names, rooms):
     for sheet in [ws for ws in workbook.sheetnames if ws != 'Team Information']:
         del workbook[sheet]
 
-    time_fmt = ('%#I:%M %p' if sys.platform == "win32" else '%-I:%M %p')
+    time_fmt = "%{}I:%M %p".format('#' if sys.platform = "win32" else '-')
     export_judge_views(tment, workbook, time_fmt, team_info, event_names, rooms)
     export_table_views(tment, workbook, time_fmt, team_info, rooms)
     export_team_views(tment, workbook, time_fmt, team_info, event_names, rooms)
@@ -96,18 +96,15 @@ def export_judge_views(tment, workbook, time_fmt, team_info, event_names, rooms)
     ws_overall = workbook.create_sheet("Judging Rooms")
     cat_sheets = [workbook.create_sheet(cat) for cat in event_names[2:5]]
 
-    header_total, rooms_total = [], []
+    header = [[], []]
     for i in range(3):
-        header_part = [event_names[i + 2]] + (tment.j_sets*team_width - 1)*['']
-        rooms_part = sum([[room] + (team_width - 1)*[''] for room in rooms[i + 2]], [])
+        header[0] += [event_names[i + 2]] + (tment.j_sets*team_width - 1)*['']
+        header[1] += sum([[room] + (team_width - 1)*[''] for room in rooms[i + 2]], [])
 
-        header_total += header_part
-        rooms_total += rooms_part
-
-        cat_sheets[i].append([''] + header_part)
-        cat_sheets[i].append([''] + rooms_part)
-    ws_overall.append([''] + header_total)
-    ws_overall.append([''] + rooms_total)
+        for row in header:
+            cat_sheets[i].append([''] + row[-tment.j_sets*team_width:])
+    for row in header:
+        ws_overall.append([''] + row)
 
     for time, teams in tment.j_slots:
         line = [time.strftime(time_fmt)]
@@ -128,12 +125,11 @@ def export_judge_views(tment, workbook, time_fmt, team_info, event_names, rooms)
 
     col_sizes = [1 + max(len(str(text)) for text in cat) for cat in
                  zip(*[team.info(tment.divisions) for team in tment.teams])]
-    for sheet in [ws_overall] + cat_sheets: #formatting
+    for sheet in [ws_overall] + cat_sheets:
         basic_sheet_format(sheet, 4)
-        for col in sheet.columns:
-            if col[0].column > 1:
-                sheet.column_dimensions[get_column_letter(col[0].column)].width =\
-                        col_sizes[(col[0].column - 2) % len(col_sizes)]
+        for col in list(sheet.columns)[1:]:
+            sheet.column_dimensions[get_column_letter(col[0].column)].width =\
+                    col_sizes[(col[0].column - 2) % len(col_sizes)]
         sheet_borders(sheet, ((styles.Border(left=thick), team_width*tment.j_sets, 2, 0),
                               (styles.Border(left=thin), team_width, 2, 1 + 2*tment.j_calib)))
 
@@ -256,7 +252,7 @@ def generate_schedule():
         logic_params, tournament_name, io_params = read_data(fpath)
         tment = Tournament(*logic_params)
         tment.schedule()
-        
+
         workbook = openpyxl.load_workbook(fpath)
         export(tment, workbook, *io_params)
         outfpath = os.path.join(os.path.dirname(fpath),
