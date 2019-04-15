@@ -8,6 +8,7 @@ import tkinter
 from tkinter import filedialog
 import pandas
 import openpyxl
+from openpyxl.utils import get_column_letter
 import openpyxl.styles as styles
 import scheduler.util as util
 from scheduler.team import Team
@@ -318,13 +319,13 @@ class Tournament:
                 cat_sheets[i].append([line[0]] + line[i*team_width*self.j_sets + 1:
                                                       (i + 1)*team_width*self.j_sets + 1])
 
-        col_sizes = [1 + max(len(str(text)) for text in cat) for cat in 
+        col_sizes = [1 + max(len(str(text)) for text in cat) for cat in
                      zip(*[team.info(self.divisions) for team in self.teams])]
         for sheet in [ws_overall] + cat_sheets: #formatting
             util.basic_ws_format(sheet, 4)
             for col in sheet.columns:
                 if col[0].column > 1:
-                    sheet.column_dimensions[openpyxl.utils.get_column_letter(col[0].column)].width =\
+                    sheet.column_dimensions[get_column_letter(col[0].column)].width =\
                             col_sizes[(col[0].column - 2) % len(col_sizes)]
             util.ws_borders(sheet, ((styles.Border(left=thick), team_width*self.j_sets, 2, 0),
                                     (styles.Border(left=thin), team_width, 2, 1 + 2*self.j_calib)))
@@ -369,13 +370,13 @@ class Tournament:
                     t_pair_sheets[t_pair].append([line[0]] + line[2*team_width*t_pair + 1:
                                                                   2*team_width*(t_pair + 1) + 1])
 
-        col_sizes = [1 + max(len(str(text)) for text in cat) for cat in 
+        col_sizes = [1 + max(len(str(text)) for text in cat) for cat in
                      zip(*[team.info(self.divisions) for team in self.teams])]
         for sheet in [sheet_overall] + t_pair_sheets:
             util.basic_ws_format(sheet, 2)
             for col in sheet.columns:
                 if col[0].column > 1:
-                    sheet.column_dimensions[openpyxl.utils.get_column_letter(col[0].column)].width =\
+                    sheet.column_dimensions[get_column_letter(col[0].column)].width =\
                             col_sizes[(col[0].column - 2) % len(col_sizes)]
             util.ws_borders(sheet, ((styles.Border(left=thick), 2*team_width, 2, 0),
                                     (styles.Border(left=thin), 2*team_width, 2 + team_width, 0)))
@@ -407,7 +408,7 @@ class Tournament:
             util.basic_ws_format(sheet)
             for col in sheet.columns:
                 if col[0].column == 2 + self.divisions:
-                    sheet.column_dimensions[openpyxl.utils.get_column_letter(col[0].column)].width = col_size
+                    sheet.column_dimensions[get_column_letter(col[0].column)].width = col_size
 
     def _team(self, team_num):
         """Returns the team at the specified internal index; wraps modularly."""
@@ -424,13 +425,13 @@ class Tournament:
             if self.divisions:
                 column_check += ["Division"]
             self.teams = [Team(*x) for x in team_sheet.loc[:, column_check].values]
-            team_info_base = [(i, list(team_sheet.columns).index(cat) + 1) for i, cat in 
+            team_info_base = [(i, list(team_sheet.columns).index(cat) + 1) for i, cat in
                               list(enumerate(column_check[::-1]))]
             self.team_info = ["=index(indirect(\"'Team Information'!C{1}\", false),"\
                                "match(indirect(\"RC[-{2}]\", false), "\
                                "indirect(\"'Team Information'!C{0}\", false), 0))"
-                               .format(team_info_base[-1][1], cat, offset + 1) for offset, cat
-                               in team_info_base[:-1]]
+                              .format(team_info_base[-1][1], cat, offset + 1) for offset, cat
+                              in team_info_base[:-1]]
         else:
             raise KeyError("Could not find columns 'Team Number' and 'Team' in 'Team Information'")
 
