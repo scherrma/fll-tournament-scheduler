@@ -82,7 +82,7 @@ def export(tment, workbook, team_info, event_names, rooms):
     for sheet in [ws for ws in workbook.sheetnames if ws != 'Team Information']:
         del workbook[sheet]
 
-    time_fmt = "%{}I:%M %p".format('#' if sys.platform = "win32" else '-')
+    time_fmt = "%{}I:%M %p".format('#' if sys.platform == "win32" else '-')
     export_judge_views(tment, workbook, time_fmt, team_info, event_names, rooms)
     export_table_views(tment, workbook, time_fmt, team_info, rooms)
     export_team_views(tment, workbook, time_fmt, team_info, event_names, rooms)
@@ -93,39 +93,33 @@ def export_judge_views(tment, workbook, time_fmt, team_info, event_names, rooms)
     thick = styles.Side(border_style='thick', color='000000')
     team_width = 1 + len(team_info)
 
-    ws_overall = workbook.create_sheet("Judging Rooms")
-    cat_sheets = [workbook.create_sheet(cat) for cat in event_names[2:5]]
+    sheets = [workbook.create_sheet(name) for name in ["Judging Rooms"] + event_names[2:5]]
 
-    header = [[], []]
+    rows = [[['']], [['']]]
     for i in range(3):
-        header[0] += [event_names[i + 2]] + (tment.j_sets*team_width - 1)*['']
-        header[1] += sum([[room] + (team_width - 1)*[''] for room in rooms[i + 2]], [])
-
-        for row in header:
-            cat_sheets[i].append([''] + row[-tment.j_sets*team_width:])
-    for row in header:
-        ws_overall.append([''] + row)
+        rows[0].append([event_names[i + 2]] + (tment.j_sets*team_width - 1)*[''])
+        rows[1].append(sum([[room] + (team_width - 1)*[''] for room in rooms[i + 2]], []))
 
     for time, teams in tment.j_slots:
-        line = [time.strftime(time_fmt)]
+        rows.append([[time.strftime(time_fmt)]])
         if teams is not None:
             teams = [[None if t is None else tment.teams[t] for t in cat] for cat in teams]
             if len(teams[0]) == 1 and tment.j_calib:
-                line += sum([teams[i][0].info(tment.divisions)
+                rows[-1] += [[teams[i][0].num] + team_info
                              + ["all {} judges in {}".format(event_names[i + 2].lower(),
                                                              rooms[i + 2][0])]
-                             + (team_width*(tment.j_sets - 1) - 1)*[''] for i in range(3)], [])
+                             + (team_width*(tment.j_sets - 1) - 1)*[''] for i in range(3)]
             else:
-                line += sum([['']*(team_width - 1) + ['None'] if team is None else
-                             [team.num] + team_info for cat in teams for team in cat], [])
-        ws_overall.append(line)
+                rows[-1] += [sum([['']*(team_width - 1) + ['None'] if team is None else
+                                  [team.num] + team_info for team in cat], []) for cat in teams]
+    for row in rows:
+        sheets[0].append(sum(row, []))
         for i in range(3):
-            cat_sheets[i].append([line[0]] + line[i*team_width*tment.j_sets + 1:
-                                                  (i + 1)*team_width*tment.j_sets + 1])
+            sheets[i + 1].append(row[0] + (row[i + 1] if len(row) > 1 else []))
 
     col_sizes = [1 + max(len(str(text)) for text in cat) for cat in
                  zip(*[team.info(tment.divisions) for team in tment.teams])]
-    for sheet in [ws_overall] + cat_sheets:
+    for sheet in sheets:
         basic_sheet_format(sheet, 4)
         for col in list(sheet.columns)[1:]:
             sheet.column_dimensions[get_column_letter(col[0].column)].width =\
