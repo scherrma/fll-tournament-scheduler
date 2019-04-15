@@ -263,8 +263,8 @@ def generate_schedule():
         print('Schedule saved: {}'.format(final_fout))
 
     except Exception as excep:
-        raise excep
-        #print(excep)
+        #raise excep
+        print(excep)
 
     if sys.platform in ["win32", "darwin"]:
         os.system("pause")
