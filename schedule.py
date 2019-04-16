@@ -24,6 +24,7 @@ def read_data(fpath):
         teams = team_sheet.loc[:, column_check].values
         team_info_base = [(i, list(team_sheet.columns).index(cat) + 1) for i, cat in
                           list(enumerate(column_check[::-1]))]
+        #any time we print full team data just print the number and look the other info up
         team_info = ["=index(indirect(\"'Team Information'!C{1}\", false),"\
                       "match(indirect(\"RC[-{2}]\", false), "\
                       "indirect(\"'Team Information'!C{0}\", false), 0))"
@@ -38,7 +39,7 @@ def read_data(fpath):
     param_sheet = param_sheet.set_index("key")
     param = dict(param_sheet.loc[:, "answer"].items())
 
-    try:
+    try: #there are a lot of settings. this appears to be necessary
         tournament_name = param["tournament_name"]
         scheduling_method = param["scheduling_method"]
         travel = timedelta(minutes=param["travel_time"])
@@ -96,6 +97,7 @@ def export_judge_views(tment, workbook, time_fmt, team_info, event_names, rooms)
 
     sheets = [workbook.create_sheet(name) for name in ["Judging Rooms"] + event_names[2:5]]
 
+    #writing data
     rows = [[['']], [['']]]
     for i in range(3):
         rows[0].append([event_names[i + 2]] + (tment.j_sets*team_width - 1)*[''])
@@ -118,6 +120,7 @@ def export_judge_views(tment, workbook, time_fmt, team_info, event_names, rooms)
         for i in range(3):
             sheets[i + 1].append(row[0] + (row[i + 1] if len(row) > 1 else []))
 
+    #formatting - borders, cell merges, striped shading, etc
     col_sizes = [1 + max(len(str(text)) for text in cat) for cat in
                  zip(*[team.info(tment.divisions) for team in tment.teams])]
     for sheet in sheets:
@@ -145,6 +148,7 @@ def export_table_views(tment, workbook, time_fmt, team_info, rooms):
     thick = styles.Side(border_style='thick', color='000000')
     team_width = 1 + len(team_info)
 
+    #writing data
     sheet_overall = workbook.create_sheet("Competition Tables")
     header = sum([[tbl] + (team_width - 1)*[''] for tbl in rooms[5]], [''])
     sheet_overall.append(header)
@@ -169,6 +173,7 @@ def export_table_views(tment, workbook, time_fmt, team_info, rooms):
                 t_pair_sheets[t_pair].append([line[0]] + line[2*team_width*t_pair + 1:
                                                               2*team_width*(t_pair + 1) + 1])
 
+    #formatting - borders, cell merges, striped shading, etc
     col_sizes = [1 + max(len(str(text)) for text in cat) for cat in
                  zip(*[team.info(tment.divisions) for team in tment.teams])]
     for sheet in [sheet_overall] + t_pair_sheets:
@@ -185,6 +190,7 @@ def export_table_views(tment, workbook, time_fmt, team_info, rooms):
 
 def export_team_views(tment, workbook, time_fmt, team_info, event_names, rooms):
     """Adds event-sorted and time-sorted team-focused views to the output workbook."""
+    #writing data
     ws_chron = workbook.create_sheet("Team View (Chronological)")
     ws_event = workbook.create_sheet("Team View (Event)")
     team_header = ['Team Number'] + (['Division'] if tment.divisions else []) + ['Team Name']
@@ -201,6 +207,7 @@ def export_team_views(tment, workbook, time_fmt, team_info, event_names, rooms):
                            for (time, length, cat, loc)
                            in sorted(team.events, key=lambda x: x[2])[2:]])
 
+    #formatting - borders, cell merges, striped shading, etc
     col_size = 1 + max(len(team.name) for team in tment.teams)
     for sheet in (ws_chron, ws_event):
         basic_sheet_format(sheet)
@@ -266,7 +273,8 @@ def generate_schedule():
         #raise excep
         print(excep)
 
-    if sys.platform in ["win32", "darwin"]:
+    #this is expected to run in console windows which close very quickly on windows
+    if sys.platform in ["win32"]:
         os.system("pause")
 
 if __name__ == "__main__":

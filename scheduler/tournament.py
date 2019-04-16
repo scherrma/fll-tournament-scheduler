@@ -55,6 +55,7 @@ class Tournament:
         """Top-level function controlling judge and table schedules for interlaced tournaments."""
         self.judge_interlaced()
 
+        #determine how morning table rounds will operate, then schedule them
         time_start = [e_start + e_length + self.travel for (e_start, e_length, *_)
                       in self.teams[3*self.j_calib].events]
         time_start = sorted([t for t in time_start if t >= self.j_start])
@@ -76,7 +77,7 @@ class Tournament:
 
         self.t_slots = []
         time_start = self.schedule_matches(time_start, team_idx, (0, 1)[:self.t_rounds], run_rate)
-        if self.t_rounds > 1:
+        if self.t_rounds > 1: #determine run settings for afternoon table rounds
             self.t_slots += [None]
             time_restart = [sum(self._team(t).events[-1][:2], self.travel
                                 - t // (2*self.t_pairs) * self.t_duration[2])
@@ -91,6 +92,9 @@ class Tournament:
         max_room = max([math.ceil(len(teams) / rooms) for teams, rooms in self.divs])
         most_rooms = max([rooms for teams, rooms in self.divs])
 
+        #teams are selected three times (once for each category) in monotonically increaseing order
+        #so team 2 will first see judges no later than team 1's second trip but no earlier than
+        #team 1's first trip
         picks = [util.rpad(rooms*[i], most_rooms, None) for i, (tms, rooms) in enumerate(self.divs)]
         pick_order = math.ceil(max_room / 3)*[val for div_picks in zip(*picks)
                                               for val in 3*div_picks if val is not None]
@@ -99,6 +103,7 @@ class Tournament:
             last_team = util.nth_occurence(pick_order, div, len(teams))
             pick_order = [x for idx, x in enumerate(pick_order) if idx <= last_team or x != div]
 
+        #to ensure teams stay in order we sometimes idle judging rooms
         excess = min([-len(teams) % 3 for teams, rooms in self.divs if
                       math.ceil(len(teams) / rooms) == max_room])
         div_teams = [util.rpad([i for i, j in enumerate(pick_order) if j == div],
@@ -110,7 +115,7 @@ class Tournament:
 
         self.j_slots = [[], [], []]
         for teams, (_, rooms) in zip(div_teams, self.divs):
-            rot_dir = 1 if (3*self.j_calib - len(teams)) % 3 == 1 else -1
+            rot_dir = 1 + bool(-len(teams) % 3 == 2)
             tmp = [sum([teams[(j + i*rot_dir) % 3 : len(teams) : 3] for i in range(3)],
                        [])[self.j_calib:] for j in range(3)]
             for i in range(3):
@@ -150,6 +155,10 @@ class Tournament:
             room_max = math.ceil(teams_left / rooms_left)
             excess = rooms_left*room_max - teams_left
 
+            #divisions that cnanot be isolated are simply run together and split into rooms
+            #goals: no room with more than two divisions, as few split rooms as possible
+            #split rooms are treated as separate divisions and therefore need to have fewer
+            #teams per room than other divisions to avoid pointlessly idling judge rooms
             idx, spillover = 0, 0
             impure_teams = sum(impure_divs, [])
             for i, teams in enumerate(impure_divs):
@@ -191,6 +200,8 @@ class Tournament:
         def avail(start, rnd):
             return [(t, self._team(start + t).available(time, self.t_duration[rnd], self.travel))
                     for t in range(self.num_teams)]
+        #it isn't always possible to run tables at full speed; we prefer to consistently idle a few
+        #tables over idling all tables for a match
         start_team = team
         if run_rate is None:
             match_sizes = [2*self.t_pairs]
@@ -221,6 +232,7 @@ class Tournament:
             while sum(next_matches[:-1]) + (team - start_team) % self.num_teams > self.num_teams:
                 next_matches.pop()
 
+            #schedule as many teams as we can in the currently available team and time block
             for match_size in next_matches:
                 timeslot = [t % self.num_teams for t in range(team, team + match_size)]
                 self.t_slots += [(time, rnd, util.rpad(timeslot, match_sizes[-1], None))]
@@ -235,6 +247,7 @@ class Tournament:
             return sum(prev_tables[team][table]**1.1 for table, team in enumerate(order)
                        if team is not None)
 
+        #the current approach only changes one match at a time; multiple passes fix bad early calls
         for assign_pass in range(assignment_passes):
             for(time, rnd, teams) in filter(None, self.t_slots):
                 if assign_pass:
