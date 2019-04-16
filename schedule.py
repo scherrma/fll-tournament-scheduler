@@ -270,8 +270,8 @@ def generate_schedule():
         print('Schedule saved: {}'.format(final_fout))
 
     except Exception as excep:
-        #raise excep
-        print(excep)
+        raise excep
+        #print(excep)
 
     #this is expected to run in console windows which close very quickly on windows
     if sys.platform in ["win32"]:
