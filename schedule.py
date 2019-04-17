@@ -239,18 +239,18 @@ def sheet_borders(sheet, borders=()):
 
 def generate_schedule():
     """Top-most level function; gets a file, reads and schedules for it, then exports the result."""
-    if len(sys.argv) == 1:
-        root = tkinter.Tk()
-        root.withdraw()
-        fpath = filedialog.askopenfilename(initialdir=os.path.dirname(os.path.abspath(__file__)),
-                                           filetypes=[("Excel files", "*.xls *.xlsm *.xlsx")])
-        root.destroy()
-    elif len(sys.argv) == 2:
-        fpath = sys.argv[1]
-    else:
-        raise SystemExit("{} only accepts either zero or one files as input".format(sys.argv[0]))
-
     try:
+        if len(sys.argv) == 1:
+            root = tkinter.Tk()
+            root.withdraw()
+            fpath = filedialog.askopenfilename(initialdir=os.path.dirname(os.path.abspath(__file__)),
+                                               filetypes=[("Excel files", "*.xls *.xlsm *.xlsx")])
+            root.destroy()
+        elif len(sys.argv) == 2:
+            fpath = sys.argv[1]
+        else:
+            raise SystemExit("{} only accepts either zero or one files as input".format(sys.argv[0]))
+
         logic_params, tournament_name, io_params = read_data(fpath)
         tment = Tournament(*logic_params)
         tment.schedule()
@@ -269,7 +269,7 @@ def generate_schedule():
                 attempts += 1
         print('Schedule saved: {}'.format(final_fout))
 
-    except Exception as excep:
+    except (Exception, SystemExit) as excep:
         #raise excep
         print(excep)
 
