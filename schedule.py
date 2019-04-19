@@ -13,7 +13,7 @@ from scheduler.tournament import Tournament
 
 def read_data(fpath):
     """Imports the team roster and scheduling settings from the input form."""
-    dfs = pandas.read_excel(fpath, sheet_name=["Team Information", "Input Form"])
+    dfs = pandas.read_excel(fpath, sheet_name=["Team Information", "Input Form"], dtype=object)
 
     team_sheet = dfs["Team Information"]
     column_check = ["Team Number", "Team"]
@@ -45,7 +45,7 @@ def read_data(fpath):
         travel = timedelta(minutes=param["travel_time"])
         event_names = ["Coaches' Meeting", "Opening Ceremonies", 'Project', 'Robot Design',
                        'Core Values']
-        event_names += param_sheet.loc["t_round_names"].dropna().values.tolist()[1:]
+        event_names += map(str, param_sheet.loc["t_round_names"].dropna().values.tolist()[1:])
         t_rounds = len(event_names) - 5
         coach_meet = (datetime.combine(datetime(1, 1, 1), param["coach_start"]),
                       timedelta(minutes=param["coach_duration"]))
@@ -65,8 +65,9 @@ def read_data(fpath):
 
         t_pairs = param["t_pairs"]
         rooms += [sum([[tbl + ' A', tbl + ' B'] for tbl in
-                       param_sheet.loc["t_pair_names"].dropna().values.tolist()[1:]],
+                       map(str, param_sheet.loc["t_pair_names"].dropna().values.tolist()[1:])],
                       [])][:2*t_pairs]
+        rooms = rooms
         t_duration = [timedelta(minutes=x) for x in
                       param_sheet.loc["t_durations"].dropna().values.tolist()[1:]]
         t_lunch = (datetime.combine(datetime(1, 1, 1), param["t_lunch"]),
@@ -81,6 +82,7 @@ def read_data(fpath):
 
 def export(tment, workbook, team_info, event_names, rooms):
     """Exports schedule to an xlsx file; uses the tournament name for the file name."""
+    print("Exporting schedule")
     for sheet in [ws for ws in workbook.sheetnames if ws != 'Team Information']:
         del workbook[sheet]
 
@@ -270,8 +272,8 @@ def generate_schedule():
         print('Schedule saved: {}'.format(final_fout))
 
     except (Exception, SystemExit) as excep:
-        #raise excep
-        print(excep)
+        raise excep
+        #print(excep)
 
     #this is expected to run in console windows which close very quickly on windows
     if sys.platform in ["win32"]:

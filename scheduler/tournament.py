@@ -238,14 +238,18 @@ class Tournament:
                 self.t_slots += [(time, rnd, util.rpad(timeslot, match_sizes[-1], None))]
                 team += match_size
                 time += self.t_duration[rnd]
+
         return time
 
     def assign_tables(self, assignment_passes=2):
         """Reorders the teams in self.t_slots to minimize table repetition for teams."""
         prev_tables = [[0 for i in range(2*self.t_pairs)] for j in range(self.num_teams)]
         def cost(order):
-            return sum(prev_tables[team][table]**1.1 for table, team in enumerate(order)
-                       if team is not None)
+            val = sum(prev_tables[team][table]**1.1 for table, team in enumerate(order)
+                      if team is not None)
+            if sum(1 for i in range(0, len(order) - 1, 2) if (order[i] == None) != (order[i + 1] == None)):
+                val += max((max(row) for row in prev_tables))
+            return val
 
         #the current approach only changes one match at a time; multiple passes fix bad early calls
         for assign_pass in range(assignment_passes):
