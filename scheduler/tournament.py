@@ -54,6 +54,7 @@ class Tournament:
     def schedule_interlaced(self):
         """Top-level function controlling judge and table schedules for interlaced tournaments."""
         self.judge_interlaced()
+        print("Starting table scheduling")
 
         #determine how morning table rounds will operate, then schedule them
         time_start = [e_start + e_length + self.travel for (e_start, e_length, *_)
@@ -107,7 +108,7 @@ class Tournament:
         excess = min([-len(teams) % 3 for teams, rooms in self.divs if
                       math.ceil(len(teams) / rooms) == max_room])
         div_teams = [util.rpad([i for i, j in enumerate(pick_order) if j == div],
-                               3*math.ceil(max_room/3)*rooms - excess, None)
+                               self.divisions*(3*math.ceil(max_room/3)*rooms - excess), None)
                      for div, (teams, rooms) in enumerate(self.divs)]
 
         team_order = [list(zip(idxs, teams)) for idxs, (teams, rooms) in zip(div_teams, self.divs)]
@@ -219,15 +220,18 @@ class Tournament:
             if team + max_teams >= len(rounds)*self.num_teams + start_team:
                 max_teams = len(rounds)*self.num_teams + start_team - team
                 max_matches = min(max_matches, math.ceil(max_teams / match_sizes[-1]))
+                min_matches = math.ceil(max_teams / match_sizes[-1])
             else:
                 max_matches = min(math.ceil((len(rounds)*self.num_teams + start_team - team)
                                             / match_sizes[-1]), max_matches)
+                min_matches = math.ceil((self._team(team + max_teams).next_available(time, self.travel)
+                                         - time) / self.t_duration[rnd])
                 max_teams -= max_teams % 2
 
             if max_matches == 0:
                 time += self.t_duration[rnd]
 
-            next_matches = util.sum_to(match_sizes, max_teams, max_matches, force_take_all=
+            next_matches = util.alt_sum_to(match_sizes, max_teams, min_matches, force_take_all=
                                        team + max_teams - start_team >= len(rounds)*self.num_teams)
             while sum(next_matches[:-1]) + (team - start_team) % self.num_teams > self.num_teams:
                 next_matches.pop()
