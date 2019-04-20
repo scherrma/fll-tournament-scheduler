@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """A module containing a Tournament class for using in creating FLL qualifier schedules."""
-from datetime import timedelta
+from datetime import timedelta, datetime
 import math
 import scheduler.util as util
 from scheduler.team import Team
@@ -76,14 +76,26 @@ class Tournament:
                 team_idx -= len(early_avail)
                 time_start -= self.t_duration[0]
 
-        self.t_slots = []
-        time_start = self.schedule_matches(time_start, team_idx, (0, 1)[:self.t_rounds], run_rate)
+        current_end = datetime.max
+        backup_end = current_end
+        time_start -= self.t_duration[0]
+        while current_end <= backup_end:
+            backup_tslot, self.t_slots = self.t_slots, []
+            backup_end = current_end
+
+            time_start += self.t_duration[0]
+            current_end = self.schedule_matches(time_start, team_idx, range(min(2, self.t_rounds)),
+                                                run_rate)
+        else:
+            time_start -= self.t_duration[0]
+            self.t_slots = backup_tslot
+
         if self.t_rounds > 1: #determine run settings for afternoon table rounds
             self.t_slots += [None]
             time_restart = [sum(self._team(t).events[-1][:2], self.travel
                                 - t // (2*self.t_pairs) * self.t_duration[2])
                             for t in range(self.num_teams)]
-            time_start = max(time_restart + [time_start + self.t_lunch[1]])
+            time_start = max(time_restart + [backup_end + self.t_lunch[1]])
             self.schedule_matches(time_start, 0, range(2, self.t_rounds), None)
 
     def judge_interlaced(self):
@@ -242,22 +254,31 @@ class Tournament:
                 self.t_slots += [(time, rnd, util.rpad(timeslot, match_sizes[-1], None))]
                 team += match_size
                 time += self.t_duration[rnd]
+
         return time
 
     def assign_tables(self, assignment_passes=2):
         """Reorders the teams in self.t_slots to minimize table repetition for teams."""
         prev_tables = [[0 for i in range(2*self.t_pairs)] for j in range(self.num_teams)]
         def cost(order):
-            return sum(prev_tables[team][table]**1.1 for table, team in enumerate(order)
-                       if team is not None)
+            val = sum(prev_tables[team][table]**1.1 for table, team in enumerate(order)
+                      if team is not None)
+            unpaired = sum(1 for i in range(0, len(order) - 1, 2) if
+                           (order[i] == None) != (order[i + 1] == None))
+            val += unpaired * (max((max(row) for row in prev_tables)) + 1)
+            return val
 
         #the current approach only changes one match at a time; multiple passes fix bad early calls
         for assign_pass in range(assignment_passes):
+            rotation = 0
             for(time, rnd, teams) in filter(None, self.t_slots):
                 if assign_pass:
                     for table, team in filter(lambda x: x[1] is not None, enumerate(teams)):
                         prev_tables[team][table] -= 1
-                teams[:] = scheduler.min_cost.min_cost(teams, cost)
+                else:
+                    rotation = (rotation + sum(1 for team in teams if team is None)) % len(teams)
+                    rotation -= rotation % 2
+                teams[:] = scheduler.min_cost.min_cost(teams[rotation:] + teams[:rotation], cost)
                 for table, team in filter(lambda x: x[1] is not None, enumerate(teams)):
                     prev_tables[team][table] += 1
                     if assign_pass + 1 == assignment_passes:

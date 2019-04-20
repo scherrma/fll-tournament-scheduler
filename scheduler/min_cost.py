@@ -7,9 +7,9 @@ def min_cost(teams, cost):
     cost -- the cost function used evaluate orderings; takes a list and return a number or tuple"""
     if len(teams) % 2: #this is designed for table pairs; that means even
         raise ValueError("Team list must contain an even number of elements")
+    init_best = (cost(teams), teams)
     nones = sum(1 for team in teams if team is None)
     teams = [team for team in teams if team is not None]
-    init_best = (cost(teams), teams + nones*[None])
     return _min_cost_internal(teams, cost, nones, [], init_best)[1]
 
 def _min_cost_internal(teams, cost, nones, start_teams, best):
