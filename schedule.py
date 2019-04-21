@@ -6,6 +6,7 @@ import sys
 import tkinter
 from tkinter import filedialog
 import pandas
+from numpy import isnan
 import openpyxl
 import openpyxl.styles as styles
 from openpyxl.utils import get_column_letter
@@ -64,10 +65,10 @@ def read_data(fpath):
                    timedelta(minutes=param["j_lunch_duration"]))
 
         t_pairs = param["t_pairs"]
-        rooms += [sum([[tbl + ' A', tbl + ' B'] for tbl in
-                       map(str, param_sheet.loc["t_pair_names"].dropna().values.tolist()[1:])],
-                      [])][:2*t_pairs]
-        rooms = rooms
+        t_names = param_sheet.loc[["t_pair_names", "t_pair_names_second"]].iloc[:, 1:1 + t_pairs].T
+        t_names = [[str(tbl) for tbl in row if not pandas.isnull(tbl)] for row in t_names.values]
+        rooms += [sum([tbls if len(tbls) > 1 else [tbls[0] + ' A', tbls[0] + ' B']
+                       for tbls in t_names], [])]
         t_duration = [timedelta(minutes=x) for x in
                       param_sheet.loc["t_durations"].dropna().values.tolist()[1:]]
         t_lunch = (datetime.combine(datetime(1, 1, 1), param["t_lunch"]),
@@ -78,9 +79,9 @@ def read_data(fpath):
 
     return ((teams, divisions, scheduling_method, travel, coach_meet, opening, j_start, j_sets,
              j_calib, j_duration, j_breaks, j_lunch, t_rounds, t_pairs, t_duration, t_lunch),
-            tournament_name, (team_info, event_names, rooms))
+            tournament_name, (team_info, event_names, rooms, t_names))
 
-def export(tment, workbook, team_info, event_names, rooms):
+def export(tment, workbook, team_info, event_names, rooms, tnames):
     """Exports schedule to an xlsx file; uses the tournament name for the file name."""
     print("Exporting schedule")
     for sheet in [ws for ws in workbook.sheetnames if ws != 'Team Information']:
@@ -88,7 +89,7 @@ def export(tment, workbook, team_info, event_names, rooms):
 
     time_fmt = "%{}I:%M %p".format('#' if sys.platform == "win32" else '-')
     export_judge_views(tment, workbook, time_fmt, team_info, event_names, rooms)
-    export_table_views(tment, workbook, time_fmt, team_info, rooms)
+    export_table_views(tment, workbook, time_fmt, team_info, rooms, tnames)
     export_team_views(tment, workbook, time_fmt, team_info, event_names, rooms)
 
 def export_judge_views(tment, workbook, time_fmt, team_info, event_names, rooms):
@@ -144,7 +145,7 @@ def export_judge_views(tment, workbook, time_fmt, team_info, event_names, rooms)
                 sheet.merge_cells(start_row=3, start_column=2 + team_width*(tment.j_sets*i + 1),
                                   end_row=3, end_column=1 + team_width*(tment.j_sets*(i + 1)))
 
-def export_table_views(tment, workbook, time_fmt, team_info, rooms):
+def export_table_views(tment, workbook, time_fmt, team_info, rooms, tnames):
     """Adds the competition table focused sheets to the output workbook."""
     thin = styles.Side(border_style='thin', color='000000')
     thick = styles.Side(border_style='thick', color='000000')
@@ -154,7 +155,7 @@ def export_table_views(tment, workbook, time_fmt, team_info, rooms):
     sheet_overall = workbook.create_sheet("Competition Tables")
     header = sum([[tbl] + (team_width - 1)*[''] for tbl in rooms[5]], [''])
     sheet_overall.append(header)
-    t_pair_sheets = [workbook.create_sheet(room[:-2]) for room in rooms[5][::2]]
+    t_pair_sheets = [workbook.create_sheet('-'.join(tbls)) for tbls in tnames]
     for t_pair in range(tment.t_pairs):
         t_pair_sheets[t_pair].append([''] + header[2*team_width*t_pair + 1:
                                                    2*team_width*(t_pair + 1)])

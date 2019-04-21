@@ -184,6 +184,7 @@ class Tournament:
                 idx += room_max - bool(skips)
                 spillover += pure + room_max - bool(skips) - len(teams)
             self.divs = [(teams, rooms) for teams, rooms in room_divs if teams]
+        self.divs.sort(key=lambda x: sorted(list({team.div for team in x[0]})))
 
     def assign_judge_times(self):
         """Determines when each judging session will happen and assigns teams to those slots."""
