@@ -246,7 +246,7 @@ class Tournament:
             if max_matches == 0:
                 time += self.t_duration[rnd]
 
-            next_matches = util.alt_sum_to(match_sizes, max_teams, min_matches, force_take_all=
+            next_matches = util.sum_to(match_sizes, max_teams, min_matches, force_take_all=
                                        team + max_teams - start_team >= len(rounds)*self.num_teams)
             while sum(next_matches[:-1]) + (team - start_team) % self.num_teams > self.num_teams:
                 next_matches.pop()
