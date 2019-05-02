@@ -47,9 +47,14 @@ class Team:
         """Returns the first event starting after time (if none, an event at datetime.max)."""
         return next((e for e in self.events if time < e[0]), (datetime.max, timedelta(0), -1, -1))
 
-    def next_available(self, time, travel):
-        return max((sum(e[:2], travel) for e in self.events
-                   if (e[0] - travel) <= time <= sum(e[:2], travel)), default=time)
+    def next_available(self, time, duration, travel):
+        if self.available(time, duration, travel):
+            return time
+        else:
+            return next(sum(e[:2], travel) for e in self.events if sum(e[:2], travel) > time and
+                        self.available(sum(e[:2], travel), duration, travel))
+        #return max((sum(e[:2], travel) for e in self.events
+        #           if (e[0] - travel - duration) <= time <= sum(e[:2], travel)), default=time)
 
     def closest_events(self):
         """Returns the time between the two closest events scheduled for the team."""

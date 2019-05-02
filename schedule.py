@@ -10,6 +10,7 @@ from numpy import isnan
 import openpyxl
 import openpyxl.styles as styles
 from openpyxl.utils import get_column_letter
+import warnings
 from scheduler.tournament import Tournament
 
 def read_data(fpath):
@@ -52,33 +53,33 @@ def read_data(fpath):
                       timedelta(minutes=param["coach_duration"]))
         opening = (datetime.combine(datetime(1, 1, 1), param["opening_start"]),
                    timedelta(minutes=param["coach_duration"]))
+        lunch = (datetime.combine(datetime(1, 1, 1), param["lunch_earliest"]),
+                 datetime.combine(datetime(1, 1, 1), param["lunch_latest"]),
+                 timedelta(minutes=param["lunch_duration"]))
 
         j_start = datetime.combine(datetime(1, 1, 1), param["j_start"])
         j_sets = param["j_sets"]
         rooms = [[param["coach_room"]], [param["opening_room"]]]
         rooms += [param_sheet.loc[key].dropna().values.tolist()[1:]
                   for key in ("j_project_rooms", "j_robot_rooms", "j_values_rooms")]
-        j_calib = (param["j_calib"] == "Yes")
+        j_calib = (param["j_calib"] == "Yes") and not divisions
         j_duration = (timedelta(minutes=param["j_duration"]), timedelta(minutes=10))
         j_breaks = (param["j_consec"], timedelta(minutes=param["j_break"]))
-        j_lunch = (datetime.combine(datetime(1, 1, 1), param["j_lunch"]),
-                   timedelta(minutes=param["j_lunch_duration"]))
 
         t_pairs = param["t_pairs"]
+        t_stagger = (param["t_stagger"] == 'Yes')
         t_names = param_sheet.loc[["t_pair_names", "t_pair_names_second"]].iloc[:, 1:1 + t_pairs].T
         t_names = [[str(tbl) for tbl in row if not pandas.isnull(tbl)] for row in t_names.values]
         rooms += [sum([tbls if len(tbls) > 1 else [tbls[0] + ' A', tbls[0] + ' B']
                        for tbls in t_names], [])]
         t_duration = [timedelta(minutes=x) for x in
                       param_sheet.loc["t_durations"].dropna().values.tolist()[1:]]
-        t_lunch = (datetime.combine(datetime(1, 1, 1), param["t_lunch"]),
-                   timedelta(minutes=param["t_lunch_duration"]))
 
     except KeyError as excep:
         raise KeyError(str(excep) + " not found in 'key' column in sheet 'Input Form'")
 
-    return ((teams, divisions, scheduling_method, travel, coach_meet, opening, j_start, j_sets,
-             j_calib, j_duration, j_breaks, j_lunch, t_rounds, t_pairs, t_duration, t_lunch),
+    return ((teams, divisions, scheduling_method, travel, coach_meet, opening, lunch, j_start,
+             j_sets, j_calib, j_duration, j_breaks, t_rounds, t_pairs, t_stagger, t_duration),
             tournament_name, (team_info, event_names, rooms, t_names))
 
 def export(tment, workbook, team_info, event_names, rooms, tnames):
@@ -258,7 +259,9 @@ def generate_schedule():
         tment = Tournament(*logic_params)
         tment.schedule()
 
-        workbook = openpyxl.load_workbook(fpath)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=UserWarning)
+            workbook = openpyxl.load_workbook(fpath)
         export(tment, workbook, *io_params)
         outfpath = os.path.join(os.path.dirname(fpath),
                                 tournament_name.lower().replace(' ', '_') + '_schedule{}.xlsx')

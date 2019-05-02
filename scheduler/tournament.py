@@ -8,8 +8,9 @@ import scheduler.min_cost
 
 class Tournament:
     """A class designed to create schedules for FLL qualifier tournaments."""
-    def __init__(self, teams, divisions, scheduling_method, travel, coach_meet, opening, j_start,
-                 j_sets, j_calib, j_duration, j_break, j_lunch, t_rounds, t_pairs, t_duration, t_lunch):
+    def __init__(self, teams, divisions, scheduling_method, travel, coach_meet, opening, lunch,
+                 j_start, j_sets, j_calib, j_duration, j_break,
+                 t_rounds, t_pairs, t_stagger, t_duration):
         """Creates a tournament and requests a roster/settings file if one was not provided."""
         self.teams = [Team(*x) for x in teams]
         self.num_teams = len(self.teams)
@@ -18,17 +19,17 @@ class Tournament:
         self.travel = travel
         self.coach_meet = coach_meet #first element is start time; second is duration
         self.opening = opening #first element is start time; second is duration
+        self.lunch = lunch #first is earliest start time; second is latest; third is duration
         self.j_start = j_start
         self.j_sets = j_sets
         self.j_calib = j_calib
         self.j_duration = j_duration #first element is for judges; second is for teams
         self.j_break = j_break #first element is sessions between breaks; second is break duration
-        self.j_lunch = j_lunch #first element is start time; second is duration
 
         self.t_rounds = t_rounds
         self.t_pairs = t_pairs
+        self.t_stagger = t_stagger
         self.t_duration = t_duration
-        self.t_lunch = t_lunch #first element is start time; second is duration
 
         self.divs = []
         self.j_slots = []
@@ -95,7 +96,7 @@ class Tournament:
             time_restart = [sum(self._team(t).events[-1][:2], self.travel
                                 - t // (2*self.t_pairs) * self.t_duration[2])
                             for t in range(self.num_teams)]
-            time_start = max(time_restart + [backup_end + self.t_lunch[1]])
+            time_start = max(time_restart + [backup_end + self.lunch[2]])
             self.schedule_matches(time_start, 0, range(2, self.t_rounds), None)
 
     def judge_interlaced(self):
@@ -193,7 +194,7 @@ class Tournament:
         times = [[self.j_start + bool(j and self.j_calib)*self.travel
                   + max(i - self.j_calib, 0)*self.j_break[1] + j*self.j_duration[0]
                   for j in range(breaks[i], breaks[i+1] + 1)] for i in range(len(breaks) - 1)]
-        j_blockers = [self.j_lunch] + [(start - self.travel, duration + 2*self.travel) 
+        j_blockers = [self.lunch[1:]] + [(start - self.travel, duration + 2*self.travel) 
                       for start, duration in (self.opening, self.coach_meet)]
         for start, length in sorted(j_blockers):
             delay = max(timedelta(0), min(length, start + length - times[0][0]))
@@ -237,7 +238,8 @@ class Tournament:
             else:
                 max_matches = min(math.ceil((len(rounds)*self.num_teams + start_team - team)
                                             / match_sizes[-1]), max_matches)
-                min_matches = math.ceil((self._team(team + max_teams).next_available(time, self.travel)
+                min_matches = math.ceil((self._team(team + max_teams)
+                                         .next_available(time, self.t_duration[rnd], self.travel)
                                          - time) / self.t_duration[rnd])
                 max_teams -= max_teams % 2
 
@@ -248,6 +250,7 @@ class Tournament:
                                        team + max_teams - start_team >= len(rounds)*self.num_teams)
             while sum(next_matches[:-1]) + (team - start_team) % self.num_teams > self.num_teams:
                 next_matches.pop()
+
 
             #schedule as many teams as we can in the currently available team and time block
             for match_size in next_matches:
