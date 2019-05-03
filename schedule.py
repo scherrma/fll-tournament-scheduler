@@ -3,6 +3,7 @@
 from datetime import datetime, timedelta
 import os
 import sys
+import math
 import tkinter
 from tkinter import filedialog
 import pandas
@@ -151,46 +152,60 @@ def export_table_views(tment, workbook, time_fmt, team_info, rooms, tnames):
     thin = styles.Side(border_style='thin', color='000000')
     thick = styles.Side(border_style='thick', color='000000')
     team_width = 1 + len(team_info)
+    space = 2
+    split = 1 + 2*team_width*((tment.t_pairs + 1) // 2)
+    staggered = [tment.t_stagger and i > (tment.t_pairs - 1) // 2 for i in range(tment.t_pairs)]
 
     #writing data
     sheet_overall = workbook.create_sheet("Competition Tables")
     header = sum([[tbl] + (team_width - 1)*[''] for tbl in rooms[5]], [''])
+    header[split:split] = tment.t_stagger*(space + 1)*['']
     sheet_overall.append(header)
     t_pair_sheets = [workbook.create_sheet('-'.join(tbls)) for tbls in tnames]
     for t_pair in range(tment.t_pairs):
-        t_pair_sheets[t_pair].append([''] + header[2*team_width*t_pair + 1:
-                                                   2*team_width*(t_pair + 1)])
+        t_pair_sheets[t_pair]\
+                .append([''] + header[2*team_width*t_pair + 1 + staggered[t_pair]*(space + 1):
+                                      2*team_width*(t_pair + 1) + staggered[t_pair]*(space + 1)])
 
     for slot in tment.t_slots:
         if slot is None:
             for sheet in t_pair_sheets + [sheet_overall]:
                 sheet.append([''])
         elif all([team is None for team in slot[2]]):
-            for sheet in t_pair_sheets + [sheet_overall]:
-                sheet.append([slot[0].strftime(time_fmt)])
+            for i, sheet in enumerate(t_pair_sheets + [sheet_overall], -1):
+                sheet.append([slot[0][staggered[max(0, i)]].strftime(time_fmt)])
         else:
             line = sum([(team_width - 1)*[''] + ['None'] if t is None else
                         [tment.teams[t].num] + team_info for t in slot[2]],
-                       [slot[0].strftime(time_fmt)])
+                       [slot[0][0].strftime(time_fmt)])
+            line[split:split] = space*[''] + [slot[0][1].strftime(time_fmt)] if tment.t_stagger else []
             sheet_overall.append(line)
             for t_pair in range(tment.t_pairs):
-                t_pair_sheets[t_pair].append([line[0]] + line[2*team_width*t_pair + 1:
-                                                              2*team_width*(t_pair + 1) + 1])
+                time_str = slot[0][staggered[t_pair]].strftime(time_fmt)
+                ls_start = 2*team_width*t_pair + (space + 1)*staggered[t_pair] + 1
+                t_pair_sheets[t_pair].append([time_str] + line[ls_start:ls_start + 2*team_width])
 
     #formatting - borders, cell merges, striped shading, etc
-    col_sizes = [1 + max(len(str(text)) for text in cat) for cat in
-                 zip(*[team.info(tment.divisions) for team in tment.teams])]
+    col_wide = [-1, -1] + 2*tment.t_pairs*[1 + max(len(str(text)) for text in cat) for cat in
+                                         zip(*[team.info(tment.divisions) for team in tment.teams])]
+    col_wide[split + 1:split + 1] = tment.t_stagger*(space*[10] + [-1])
     for sheet in [sheet_overall] + t_pair_sheets:
         basic_sheet_format(sheet, 2)
-        for col in sheet.columns:
-            if col[0].column > 1:
-                sheet.column_dimensions[get_column_letter(col[0].column)].width =\
-                        col_sizes[(col[0].column - 2) % len(col_sizes)]
-        sheet_borders(sheet, ((styles.Border(left=thick), 2*team_width, 2, 0),
-                              (styles.Border(left=thin), 2*team_width, 2 + team_width, 0)))
-        for i in range(2, len(list(sheet.columns)), team_width):
-            sheet.merge_cells(start_row=1, start_column=i,
-                              end_row=1, end_column=i + team_width - 1)
+        for col, width in [(col, width) for col, width in enumerate(col_wide) if width > 0]:
+            sheet.column_dimensions[get_column_letter(col)].width = width
+        thick_border = [1 + 2*i*team_width for i in range(tment.t_pairs + 1)]
+        if tment.t_stagger:
+            thick_border = [1 + 2*i*team_width for i in range(math.ceil(tment.t_pairs / 2) + 1)]
+            thick_border += [val + thick_border[-1] + space for val in thick_border]
+        for cell in [cell for row in sheet for cell in row]:
+            if split < cell.column <= split + space:
+                cell.fill = openpyxl.styles.PatternFill(None)
+            elif cell.column in thick_border or cell.column + team_width in thick_border:
+                cell.border = styles.Border(right=thick if cell.column in thick_border else thin)
+        for i in range(2*tment.t_pairs):
+            start_col = 2 + i*team_width + (space + 1)*staggered[i // 2]
+            sheet.merge_cells(start_row=1, start_column=start_col,
+                              end_row=1, end_column=start_col + team_width - 1)
 
 def export_team_views(tment, workbook, time_fmt, team_info, event_names, rooms):
     """Adds event-sorted and time-sorted team-focused views to the output workbook."""

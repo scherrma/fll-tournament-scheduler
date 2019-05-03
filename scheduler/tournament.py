@@ -213,7 +213,8 @@ class Tournament:
     def schedule_matches(self, time, team, rounds, run_rate):
         """Determines when table matches will occur and assigns teams to matches."""
         def avail(start, rnd):
-            return [(t, self._team(start + t).available(time, self.t_duration[rnd], self.travel))
+            return [(t, self._team(start + t)\
+                        .available(time, (1 + self.t_stagger/2)*self.t_duration[rnd], self.travel))
                     for t in range(self.num_teams)]
         #it isn't always possible to run tables at full speed; we prefer to consistently idle a few
         #tables over idling all tables for a match
@@ -255,7 +256,8 @@ class Tournament:
             #schedule as many teams as we can in the currently available team and time block
             for match_size in next_matches:
                 timeslot = [t % self.num_teams for t in range(team, team + match_size)]
-                self.t_slots += [(time, rnd, util.rpad(timeslot, match_sizes[-1], None))]
+                self.t_slots += [((time, time + self.t_duration[rnd] / 2) if self.t_stagger else (time,),
+                                  rnd, util.rpad(timeslot, match_sizes[-1], None))]
                 team += match_size
                 time += self.t_duration[rnd]
 
@@ -275,7 +277,7 @@ class Tournament:
         #the current approach only changes one match at a time; multiple passes fix bad early calls
         for assign_pass in range(assignment_passes):
             rotation = 0
-            for(time, rnd, teams) in filter(None, self.t_slots):
+            for(times, rnd, teams) in filter(None, self.t_slots):
                 if assign_pass:
                     for table, team in filter(lambda x: x[1] is not None, enumerate(teams)):
                         prev_tables[team][table] -= 1
@@ -288,7 +290,9 @@ class Tournament:
                     if assign_pass + 1 == assignment_passes:
                         teams[:] = util.rpad(teams, 2*self.t_pairs, None)
                         team_rnd = sum(1 for event in self._team(team).events if event[2] > 4)
-                        self._team(team).add_event(time, self.t_duration[rnd], 5 + team_rnd, table)
+                        self._team(team).add_event(times[self.t_stagger and 
+                                                         int(table >= (self.t_pairs + 1) // 2 * 2)],
+                                                   self.t_duration[rnd], 5 + team_rnd, table)
 
     def _team(self, team_num):
         """Returns the team at the specified internal index; wraps modularly."""
