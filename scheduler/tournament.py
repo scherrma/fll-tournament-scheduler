@@ -307,7 +307,7 @@ class Tournament:
             elif all([isnull(idx - i) for i in range(3)]):
                 self.t_slots[max(0, idx - 2)] = None
                 del self.t_slots[idx]
-                del self.t_slots[idx - 1]
+                del self.t_slots[max(0, idx - 1)]
                 idx = 0
             else:
                 idx += 1
