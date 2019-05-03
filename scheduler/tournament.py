@@ -66,7 +66,8 @@ class Tournament:
         team_idx = next((t for t in range(3*self.j_calib + 1) if
                          self._team(t).available(time_start, self.t_duration[0], self.travel)))
 
-        run_rate = 3*self.j_sets*self.t_duration[0]/(self.j_duration[0] + self.j_break[1]/self.j_break[0])
+        run_rate = 3*self.j_sets*self.t_duration[0]/\
+                (self.j_duration[0] + self.j_break[1]/self.j_break[0])
 
         min_early_run_rate = max(2, 2*math.ceil(run_rate/2))
         if self.num_teams % min_early_run_rate:
@@ -87,9 +88,8 @@ class Tournament:
             time_start += self.t_duration[0]
             current_end = self.schedule_matches(time_start, team_idx, range(min(2, self.t_rounds)),
                                                 run_rate)
-        else:
-            time_start -= self.t_duration[0]
-            self.t_slots = backup_tslot
+        time_start -= self.t_duration[0]
+        self.t_slots = backup_tslot
 
         if self.t_rounds > 1: #determine run settings for afternoon table rounds
             self.t_slots += [None]
@@ -189,13 +189,13 @@ class Tournament:
 
     def assign_judge_times(self):
         """Determines when each judging session will happen and assigns teams to those slots."""
-        breaks = {0, len(self.j_slots)} | set(range(self.j_calib, len(self.j_slots), self.j_break[0]))
-        breaks = sorted(list(breaks))
+        breaks = set(range(self.j_calib, len(self.j_slots), self.j_break[0]))
+        breaks = sorted(list({0, len(self.j_slots)} | breaks))
         times = [[self.j_start + bool(j and self.j_calib)*self.travel
                   + max(i - self.j_calib, 0)*self.j_break[1] + j*self.j_duration[0]
                   for j in range(breaks[i], breaks[i+1] + 1)] for i in range(len(breaks) - 1)]
-        j_blockers = [self.lunch[1:]] + [(start - self.travel, duration + 2*self.travel) 
-                      for start, duration in (self.opening, self.coach_meet)]
+        j_blockers = [(start - self.travel, duration + 2*self.travel) for start, duration
+                      in (self.opening, self.coach_meet)] + [self.lunch[1:]]
         for start, length in sorted(j_blockers):
             delay = max(timedelta(0), min(length, start + length - times[0][0]))
             delay -= self.j_break[1] if start >= times[0][-1] else timedelta(0)
@@ -252,12 +252,11 @@ class Tournament:
             while sum(next_matches[:-1]) + (team - start_team) % self.num_teams > self.num_teams:
                 next_matches.pop()
 
-
             #schedule as many teams as we can in the currently available team and time block
             for match_size in next_matches:
                 timeslot = [t % self.num_teams for t in range(team, team + match_size)]
-                self.t_slots += [((time, time + self.t_duration[rnd] / 2) if self.t_stagger else (time,),
-                                  rnd, util.rpad(timeslot, match_sizes[-1], None))]
+                self.t_slots += [((time, time + self.t_duration[rnd] / 2), rnd,
+                                  util.rpad(timeslot, match_sizes[-1], None))]
                 team += match_size
                 time += self.t_duration[rnd]
 
@@ -270,7 +269,7 @@ class Tournament:
             val = sum(prev_tables[team][table]**1.1 for table, team in enumerate(order)
                       if team is not None)
             val += sum(self.t_rounds + 1 for i in range(0, len(order) - 1, 2) if
-                       (order[i] == None) != (order[i + 1] == None))
+                       (order[i] is None) != (order[i + 1] is None))
             return val
 
         #the current approach only changes one match at a time; multiple passes fix bad early calls
@@ -294,8 +293,9 @@ class Tournament:
                             for i in range(self.t_pairs) for j in range(2)]
             for table, team in filter(lambda x: x[1] is not None, enumerate(teams)):
                 team_rnd = sum(1 for event in self._team(team).events if event[2] > 4)
-                self._team(team).add_event(times[int(table >= (self.t_pairs + 1) // 2 * 2) and
-                                                 self.t_stagger], self.t_duration[rnd], 5 + team_rnd, table)
+                self._team(team).add_event(times[table >= util.round_to(self.t_pairs, 2)
+                                                 and self.t_stagger],
+                                           self.t_duration[rnd], 5 + team_rnd, table)
 
     def _team(self, team_num):
         """Returns the team at the specified internal index; wraps modularly."""
