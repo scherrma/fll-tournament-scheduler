@@ -269,9 +269,8 @@ class Tournament:
         def cost(order):
             val = sum(prev_tables[team][table]**1.1 for table, team in enumerate(order)
                       if team is not None)
-            unpaired = sum(1 for i in range(0, len(order) - 1, 2) if
-                           (order[i] == None) != (order[i + 1] == None))
-            val += unpaired * (max((max(row) for row in prev_tables)) + 1)
+            val += sum(self.t_rounds + 1 for i in range(0, len(order) - 1, 2) if
+                       (order[i] == None) != (order[i + 1] == None))
             return val
 
         #the current approach only changes one match at a time; multiple passes fix bad early calls
@@ -287,12 +286,16 @@ class Tournament:
                 teams[:] = scheduler.min_cost.min_cost(teams[rotation:] + teams[:rotation], cost)
                 for table, team in filter(lambda x: x[1] is not None, enumerate(teams)):
                     prev_tables[team][table] += 1
-                    if assign_pass + 1 == assignment_passes:
-                        teams[:] = util.rpad(teams, 2*self.t_pairs, None)
-                        team_rnd = sum(1 for event in self._team(team).events if event[2] > 4)
-                        self._team(team).add_event(times[self.t_stagger and 
-                                                         int(table >= (self.t_pairs + 1) // 2 * 2)],
-                                                   self.t_duration[rnd], 5 + team_rnd, table)
+
+        for (times, rnd, teams) in filter(None, self.t_slots):
+            teams[:] = util.rpad(teams, 2*self.t_pairs, None)
+            if self.t_stagger:
+                teams[:] = [teams[util.round_to(self.t_pairs, 2)*(i % 2) + util.round_to(i, -2) + j]
+                            for i in range(self.t_pairs) for j in range(2)]
+            for table, team in filter(lambda x: x[1] is not None, enumerate(teams)):
+                team_rnd = sum(1 for event in self._team(team).events if event[2] > 4)
+                self._team(team).add_event(times[int(table >= (self.t_pairs + 1) // 2 * 2) and
+                                                 self.t_stagger], self.t_duration[rnd], 5 + team_rnd, table)
 
     def _team(self, team_num):
         """Returns the team at the specified internal index; wraps modularly."""

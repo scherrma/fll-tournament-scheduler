@@ -53,8 +53,6 @@ class Team:
         else:
             return next(sum(e[:2], travel) for e in self.events if sum(e[:2], travel) > time and
                         self.available(sum(e[:2], travel), duration, travel))
-        #return max((sum(e[:2], travel) for e in self.events
-        #           if (e[0] - travel - duration) <= time <= sum(e[:2], travel)), default=time)
 
     def closest_events(self):
         """Returns the time between the two closest events scheduled for the team."""

@@ -198,7 +198,7 @@ def export_table_views(tment, workbook, time_fmt, team_info, rooms, tnames):
             thick_border = [1 + 2*i*team_width for i in range(math.ceil(tment.t_pairs / 2) + 1)]
             thick_border += [val + thick_border[-1] + space for val in thick_border]
         for cell in [cell for row in sheet for cell in row]:
-            if split < cell.column <= split + space:
+            if tment.t_stagger and split < cell.column <= split + space:
                 cell.fill = openpyxl.styles.PatternFill(None)
             elif cell.column in thick_border or cell.column + team_width in thick_border:
                 cell.border = styles.Border(right=thick if cell.column in thick_border else thin)
