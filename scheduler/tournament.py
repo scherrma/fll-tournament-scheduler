@@ -95,7 +95,8 @@ class Tournament:
         if self.t_rounds > 1: #determine run settings for afternoon table rounds
             self.t_slots += [None]
             time_restart = [sum(self._team(t).events[-1][:2], self.travel
-                                - t // (2*self.t_pairs) * self.t_duration[2])
+                                - (t // (2*self.t_pairs) + t // (2*self.t_consec*self.t_pairs))
+                                * self.t_duration[2])
                             for t in range(self.num_teams)]
             time_start = max(time_restart + [backup_end + self.lunch[2]])
             self.schedule_matches(time_start, 0, range(2, self.t_rounds), None)
@@ -248,7 +249,8 @@ class Tournament:
 
             if max_teams == 0 or max_matches == 0 or consec >= self.t_consec:
                 consec = 0
-                max_teams, min_matches = 0, 0
+                if not len(rounds)*self.num_teams + start_team - team <= max_teams <= match_sizes[-1]:
+                    max_teams, min_matches = 0, 0
 
             next_matches = util.sum_to(match_sizes, max_teams, min_matches, force_take_all=
                                        team + max_teams - start_team >= len(rounds)*self.num_teams)
@@ -285,8 +287,9 @@ class Tournament:
                     for table, team in filter(lambda x: x[1] is not None, enumerate(teams)):
                         prev_tables[team][table] -= 1
                 else:
-                    rotation = (rotation + sum(1 for team in teams if team is None)) % len(teams)
-                    rotation -= rotation % 2
+                    rotation += sum(2 for i in range(0, len(teams) - 1, 2)
+                                    if teams[i] is teams[i + 1] is None)
+                    rotation %= len(teams)
                 teams[:] = scheduler.min_cost.min_cost(teams[rotation:] + teams[:rotation], cost)
                 for table, team in filter(lambda x: x[1] is not None, enumerate(teams)):
                     prev_tables[team][table] += 1
