@@ -10,7 +10,7 @@ class Tournament:
     """A class designed to create schedules for FLL qualifier tournaments."""
     def __init__(self, teams, divisions, scheduling_method, travel, coach_meet, opening, lunch,
                  j_start, j_sets, j_calib, j_duration, j_break,
-                 t_rounds, t_pairs, t_stagger, t_duration):
+                 t_rounds, t_pairs, t_stagger, t_consec, t_duration):
         """Creates a tournament and requests a roster/settings file if one was not provided."""
         self.teams = [Team(*x) for x in teams]
         self.num_teams = len(self.teams)
@@ -29,6 +29,7 @@ class Tournament:
         self.t_rounds = t_rounds
         self.t_pairs = t_pairs
         self.t_stagger = t_stagger
+        self.t_consec = t_consec
         self.t_duration = t_duration
 
         self.divs = []
@@ -225,6 +226,7 @@ class Tournament:
             run_rate = 2*min(math.ceil(run_rate/2), self.t_pairs)
             match_sizes = [max(2, run_rate - 2), run_rate]
 
+        consec = 0
         while team < len(rounds)*self.num_teams + start_team:
             rnd = rounds[(team - start_team) // self.num_teams]
             max_teams = next((t for t, free in avail(team, rnd) if not free),
@@ -244,13 +246,16 @@ class Tournament:
                                          - time) / self.t_duration[rnd])
                 max_teams -= max_teams % 2
 
-            if max_matches == 0:
-                time += self.t_duration[rnd]
+            if max_teams == 0 or max_matches == 0 or consec >= self.t_consec:
+                consec = 0
+                max_teams, min_matches = 0, 0
 
             next_matches = util.sum_to(match_sizes, max_teams, min_matches, force_take_all=
                                        team + max_teams - start_team >= len(rounds)*self.num_teams)
             while sum(next_matches[:-1]) + (team - start_team) % self.num_teams > self.num_teams:
                 next_matches.pop()
+            next_matches = next_matches[:self.t_consec - consec]
+            consec += len(next_matches) if next_matches != [0] else 0
 
             #schedule as many teams as we can in the currently available team and time block
             for match_size in next_matches:
@@ -296,7 +301,9 @@ class Tournament:
                 self._team(team).add_event(times[table >= util.round_to(self.t_pairs, 2)
                                                  and self.t_stagger],
                                            self.t_duration[rnd], 5 + team_rnd, table)
+        self.clean_tslots()
 
+    def clean_tslots(self):
         def isnull(idx):
             return self.t_slots[idx] is None or all([team is None for team in self.t_slots[idx][2]])
         idx = 0

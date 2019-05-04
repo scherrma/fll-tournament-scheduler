@@ -69,6 +69,7 @@ def read_data(fpath):
 
         t_pairs = param["t_pairs"]
         t_stagger = (param["t_stagger"] == 'Yes')
+        t_consec = param["t_consec"]
         t_names = param_sheet.loc[["t_pair_names", "t_pair_names_second"]].iloc[:, 1:1 + t_pairs].T
         t_names = [[str(tbl) for tbl in row if not pandas.isnull(tbl)] for row in t_names.values]
         rooms += [sum([tbls if len(tbls) > 1 else [tbls[0] + ' A', tbls[0] + ' B']
@@ -80,8 +81,8 @@ def read_data(fpath):
         raise KeyError(str(excep) + " not found in 'key' column in sheet 'Input Form'")
 
     return ((teams, divisions, scheduling_method, travel, coach_meet, opening, lunch, j_start,
-             j_sets, j_calib, j_duration, j_breaks, t_rounds, t_pairs, t_stagger, t_duration),
-            tournament_name, (team_info, event_names, rooms, t_names))
+             j_sets, j_calib, j_duration, j_breaks, t_rounds, t_pairs, t_stagger, t_consec,
+             t_duration), tournament_name, (team_info, event_names, rooms, t_names))
 
 def export(tment, workbook, team_info, event_names, rooms, tnames):
     """Exports schedule to an xlsx file; uses the tournament name for the file name."""
@@ -169,11 +170,13 @@ def export_table_views(tment, workbook, time_fmt, team_info, rooms, tnames):
 
     for slot in tment.t_slots:
         if slot is None:
-            for sheet in t_pair_sheets + [sheet_overall]:
+            for sheet in [sheet for sheet in t_pair_sheets + [sheet_overall] for i in range(2)]:
                 sheet.append([''])
         elif all([team is None for team in slot[2]]):
-            for i, sheet in enumerate(t_pair_sheets + [sheet_overall], -1):
-                sheet.append([slot[0][staggered[max(0, i)]].strftime(time_fmt)])
+            sheet_overall.append([slot[0][0].strftime(time_fmt)] + tment.t_stagger*((split + 1)*[''] +
+                                 [slot[0][1].strftime(time_fmt)]))
+            for i, sheet in enumerate(t_pair_sheets):
+                sheet.append([slot[0][staggered[i]].strftime(time_fmt)])
         else:
             line = sum([(team_width - 1)*[''] + ['None'] if t is None else
                         [tment.teams[t].num] + team_info for t in slot[2]],
@@ -241,11 +244,13 @@ def basic_sheet_format(sheet, start=0):
         length = 2 + max((len(str(cell.value)) for cell in col[start:]
                           if cell.value and str(cell.value)[0] != '='), default=0)
         sheet.column_dimensions[openpyxl.utils.get_column_letter(col[0].column)].width = length
-    for row in list(sheet.rows):
+    row_counter = 0
+    for row in sheet.rows:
         row[0].alignment = openpyxl.styles.Alignment(horizontal='right')
+        row_counter = (row[0].value != '')*(row_counter + 1)
         for cell in row:
             cell.alignment = openpyxl.styles.Alignment(horizontal='center')
-            if cell.row > 1 and cell.row % 2 == 0:
+            if cell.row > 1 and row_counter % 2:
                 cell.fill = openpyxl.styles.PatternFill('solid', fgColor='DDDDDD')
 
 def sheet_borders(sheet, borders=()):
