@@ -274,11 +274,10 @@ class Tournament:
                 for table, team in filter(lambda x: x[1] is not None, enumerate(teams)):
                     prev_tables[team][table] += 1
 
+        tbl_order = [2*j + k for i in range(2) for j in range(i, self.t_pairs, 2) for k in range(2)]
         for (times, rnd, teams) in filter(None, self.t_slots):
             teams[:] = util.rpad(teams, 2*self.t_pairs, None)
-            if self.t_stagger:
-                teams[:] = [teams[util.round_to(self.t_pairs, 2)*(i % 2) + util.round_to(i, -2) + j]
-                            for i in range(self.t_pairs) for j in range(2)]
+            teams[:] = [teams[tbl if self.t_stagger else i] for i, tbl in enumerate(tbl_order)]
             for table, team in filter(lambda x: x[1] is not None, enumerate(teams)):
                 team_rnd = sum(1 for event in self._team(team).events if event[2] > 4)
                 self._team(team).add_event(times[table >= util.round_to(self.t_pairs, 2)
@@ -287,6 +286,7 @@ class Tournament:
         self.clean_tslots()
 
     def clean_tslots(self):
+        """Consolidates idle matches in self.t_slots."""
         def isnull(idx):
             return self.t_slots[idx] is None or all([team is None for team in self.t_slots[idx][2]])
         idx = 0
