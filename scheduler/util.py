@@ -30,3 +30,11 @@ def round_to(val, base):
 def rpad(ls, size, val):
     """Right-pads a list with a prescribed value to a set length."""
     return ls + (size - len(ls))*[val]
+
+def first_at_least(ls, minimum):
+    """Returns the first N elements of a list that sum to at least minimum (in-order)."""
+    idx, total = 0, 0
+    while idx < len(ls) and total < minimum:
+        total += ls[idx]
+        idx += 1
+    return ls[:idx]
