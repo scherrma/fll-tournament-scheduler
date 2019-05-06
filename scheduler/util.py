@@ -7,12 +7,14 @@ def sum_to(options, goal, picks, force_take_all=False):
     goal -- the value to attempt to sum to
     picks -- the length of the list to be returned"""
     selected = []
-    if goal < min(options):
+    if not picks:
+        selected = [0]
+    elif goal < min(options):
         selected = [goal]
     else:
         while goal >= min(options) and picks > 0:
-            selected.append(min((x for x in options if x >= goal/picks),
-                                key=lambda x: abs(x - goal/picks), default=options[-1]))
+            selected.append(min((x for x in options if x <= goal),
+                                key=lambda x: abs(x - goal/picks - 0.1)))
             goal -= selected[-1]
             picks -= 1
         if force_take_all and max(options) - selected[-1] >= goal:

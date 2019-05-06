@@ -67,8 +67,10 @@ class Tournament:
         team_idx = next((t for t in range(3*self.j_calib + 1) if
                          self._team(t).available(time_start, self.t_duration[0], self.travel)))
 
-        run_rate = 3*self.j_sets*self.t_duration[0]/\
-                (self.j_duration[0] + self.j_break[1]/self.j_break[0])
+        run_rate = 3*self.j_sets*self.t_duration[0]
+        run_rate *= 1 + (self.t_consec < self.num_teams) / self.t_consec
+        run_rate /= self.j_duration[0] + (self.j_break[1] / self.j_break[0] if
+                                          self.j_break[0] < self.num_teams else timedelta(0))
 
         min_early_run_rate = max(2, 2*math.ceil(run_rate/2))
         if self.num_teams % min_early_run_rate:
@@ -103,8 +105,6 @@ class Tournament:
 
     def judge_interlaced(self):
         """Generates the judging schedule for tournaments using interlaced scheduling."""
-        self.j_calib = self.j_calib and not self.divisions
-
         max_room = max([math.ceil(len(teams) / rooms) for teams, rooms in self.divs])
         most_rooms = max([rooms for teams, rooms in self.divs])
 
@@ -224,18 +224,20 @@ class Tournament:
         teams_left = len(rounds)*self.num_teams
         while teams_left > 0:
             rnd = rounds[len(rounds) - ((teams_left - 1) // self.num_teams + 1)]
-
             window = (1.5 if self.t_stagger else 1)*self.t_duration[rnd]
+
             max_teams = next(filter(delay, range(teams_left)), teams_left)
-            min_matches = math.ceil(delay(max_teams) / self.t_duration[rnd] or
-                                    teams_left / match_sizes[-1])
+            num_matches = min(math.ceil(delay(max_teams) / self.t_duration[rnd] or
+                                        teams_left / match_sizes[-1]),
+                              math.floor((self._team(team_next).next_event(time_next)[0] - time_next
+                                         - self.travel) / self.t_duration[rnd] - self.t_stagger/2))
 
-            if max_teams == 0 or consec >= self.t_consec:
+            if max_teams == 0 or num_matches == 0 or consec >= self.t_consec:
                 consec = 0
-                if not teams_left <= max_teams <= match_sizes[-1]:
-                    max_teams, min_matches = 0, 0
+                if num_matches and not teams_left <= max_teams <= match_sizes[-1]:
+                    max_teams, num_matches = 0, 0
 
-            next_matches = util.sum_to(match_sizes, max_teams, min_matches, max_teams >= teams_left)
+            next_matches = util.sum_to(match_sizes, max_teams, num_matches, max_teams >= teams_left)
             next_matches = next_matches[:self.t_consec - consec]
             next_matches = util.first_at_least(next_matches, (teams_left - 1) % self.num_teams + 1)
 

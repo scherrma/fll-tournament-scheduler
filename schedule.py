@@ -53,7 +53,7 @@ def read_data(fpath):
         coach_meet = (datetime.combine(datetime(1, 1, 1), param["coach_start"]),
                       timedelta(minutes=param["coach_duration"]))
         opening = (datetime.combine(datetime(1, 1, 1), param["opening_start"]),
-                   timedelta(minutes=param["coach_duration"]))
+                   timedelta(minutes=param["opening_duration"]))
         lunch = (datetime.combine(datetime(1, 1, 1), param["lunch_earliest"]),
                  datetime.combine(datetime(1, 1, 1), param["lunch_latest"]),
                  timedelta(minutes=param["lunch_duration"]))
@@ -278,6 +278,8 @@ def generate_schedule():
         logic_params, tournament_name, io_params = read_data(fpath)
         tment = Tournament(*logic_params)
         tment.schedule()
+        for team in [team for team in tment.teams if team.closest_events() < tment.travel]:
+            print(team, "has two events separated by only", team.closest_events())
 
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", category=UserWarning)
