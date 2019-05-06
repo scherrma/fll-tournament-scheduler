@@ -65,11 +65,11 @@ def read_data(fpath):
                   for key in ("j_project_rooms", "j_robot_rooms", "j_values_rooms")]
         j_calib = (param["j_calib"] == "Yes") and not divisions
         j_duration = (timedelta(minutes=param["j_duration"]), timedelta(minutes=10))
-        j_breaks = (param["j_consec"], timedelta(minutes=param["j_break"]))
+        j_breaks = (param["j_consec"] or len(teams), timedelta(minutes=param["j_break"]))
 
         t_pairs = param["t_pairs"]
         t_stagger = (param["t_stagger"] == 'Yes')
-        t_consec = param["t_consec"]
+        t_consec = param["t_consec"] or len(teams)*t_rounds
         t_names = param_sheet.loc[["t_pair_names", "t_pair_names_second"]].iloc[:, 1:1 + t_pairs].T
         t_names = [[str(tbl) for tbl in row if not pandas.isnull(tbl)] for row in t_names.values]
         rooms += [sum([tbls if len(tbls) > 1 else [tbls[0] + ' A', tbls[0] + ' B']

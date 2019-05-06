@@ -212,62 +212,42 @@ class Tournament:
                 for room, team in filter(lambda x: x[1] is not None, enumerate(cat_teams)):
                     self.teams[team].add_event(time, self.j_duration[1], cat + 2, room)
 
-    def schedule_matches(self, time, team, rounds, run_rate):
+    def schedule_matches(self, time_next, team_next, rounds, run_rate):
         """Determines when table matches will occur and assigns teams to matches."""
-        def avail(start, rnd):
-            return [(t, self._team(start + t)\
-                        .available(time, (1 + self.t_stagger/2)*self.t_duration[rnd], self.travel))
-                    for t in range(self.num_teams)]
-        #it isn't always possible to run tables at full speed; we prefer to consistently idle a few
-        #tables over idling all tables for a match
-        start_team = team
-        if run_rate is None:
-            match_sizes = [2*self.t_pairs]
-        else:
-            run_rate = 2*min(math.ceil(run_rate/2), self.t_pairs)
-            match_sizes = [max(2, run_rate - 2), run_rate]
+        run_rate = 2*min(math.ceil((run_rate or 2*self.t_pairs)/2), self.t_pairs)
+        match_sizes = [max(2, run_rate - 2), run_rate]
+
+        def delay(t):
+            return self._team(t + team_next).next_avail(time_next, window, self.travel) - time_next
 
         consec = 0
-        while team < len(rounds)*self.num_teams + start_team:
-            rnd = rounds[(team - start_team) // self.num_teams]
-            max_teams = next((t for t, free in avail(team, rnd) if not free),
-                             len(rounds)*self.num_teams)
-            max_matches = (self._team(team).next_event(time)[0] - time - self.travel)\
-                    // self.t_duration[rnd]
+        teams_left = len(rounds)*self.num_teams
+        while teams_left > 0:
+            rnd = rounds[len(rounds) - ((teams_left - 1) // self.num_teams + 1)]
 
-            if team + max_teams >= len(rounds)*self.num_teams + start_team:
-                max_teams = len(rounds)*self.num_teams + start_team - team
-                max_matches = min(max_matches, math.ceil(max_teams / match_sizes[-1]))
-                min_matches = math.ceil(max_teams / match_sizes[-1])
-            else:
-                max_matches = min(math.ceil((len(rounds)*self.num_teams + start_team - team)
-                                            / match_sizes[-1]), max_matches)
-                min_matches = math.ceil((self._team(team + max_teams)
-                                         .next_available(time, self.t_duration[rnd], self.travel)
-                                         - time) / self.t_duration[rnd])
-                max_teams -= max_teams % 2
+            window = (1.5 if self.t_stagger else 1)*self.t_duration[rnd]
+            max_teams = next(filter(delay, range(teams_left)), teams_left)
+            min_matches = math.ceil(delay(max_teams) / self.t_duration[rnd] or
+                                    teams_left / match_sizes[-1])
 
-            if max_teams == 0 or max_matches == 0 or consec >= self.t_consec:
+            if max_teams == 0 or consec >= self.t_consec:
                 consec = 0
-                if not len(rounds)*self.num_teams + start_team - team <= max_teams <= match_sizes[-1]:
+                if not teams_left <= max_teams <= match_sizes[-1]:
                     max_teams, min_matches = 0, 0
 
-            next_matches = util.sum_to(match_sizes, max_teams, min_matches, force_take_all=
-                                       team + max_teams - start_team >= len(rounds)*self.num_teams)
-            while sum(next_matches[:-1]) + (team - start_team) % self.num_teams > self.num_teams:
-                next_matches.pop()
+            next_matches = util.sum_to(match_sizes, max_teams, min_matches, max_teams >= teams_left)
             next_matches = next_matches[:self.t_consec - consec]
+            next_matches = util.first_at_least(next_matches, (teams_left - 1) % self.num_teams + 1)
+
+            for match_size in next_matches:
+                timeslot = [(t + team_next) % self.num_teams for t in range(match_size)]
+                self.t_slots += [((time_next, time_next + self.t_duration[rnd] / 2), rnd,
+                                  util.rpad(timeslot, match_sizes[-1], None))]
+                time_next += self.t_duration[rnd]
+                team_next, teams_left = team_next + match_size, teams_left - match_size
             consec += len(next_matches) if next_matches != [0] else 0
 
-            #schedule as many teams as we can in the currently available team and time block
-            for match_size in next_matches:
-                timeslot = [t % self.num_teams for t in range(team, team + match_size)]
-                self.t_slots += [((time, time + self.t_duration[rnd] / 2), rnd,
-                                  util.rpad(timeslot, match_sizes[-1], None))]
-                team += match_size
-                time += self.t_duration[rnd]
-
-        return time
+        return time_next
 
     def assign_tables(self, assignment_passes=2):
         """Reorders the teams in self.t_slots to minimize table repetition for teams."""
@@ -294,11 +274,10 @@ class Tournament:
                 for table, team in filter(lambda x: x[1] is not None, enumerate(teams)):
                     prev_tables[team][table] += 1
 
+        tbl_order = [2*j + k for i in range(2) for j in range(i, self.t_pairs, 2) for k in range(2)]
         for (times, rnd, teams) in filter(None, self.t_slots):
             teams[:] = util.rpad(teams, 2*self.t_pairs, None)
-            if self.t_stagger:
-                teams[:] = [teams[util.round_to(self.t_pairs, 2)*(i % 2) + util.round_to(i, -2) + j]
-                            for i in range(self.t_pairs) for j in range(2)]
+            teams[:] = [teams[tbl if self.t_stagger else i] for i, tbl in enumerate(tbl_order)]
             for table, team in filter(lambda x: x[1] is not None, enumerate(teams)):
                 team_rnd = sum(1 for event in self._team(team).events if event[2] > 4)
                 self._team(team).add_event(times[table >= util.round_to(self.t_pairs, 2)
@@ -307,6 +286,7 @@ class Tournament:
         self.clean_tslots()
 
     def clean_tslots(self):
+        """Consolidates idle matches in self.t_slots."""
         def isnull(idx):
             return self.t_slots[idx] is None or all([team is None for team in self.t_slots[idx][2]])
         idx = 0

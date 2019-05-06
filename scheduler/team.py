@@ -47,7 +47,7 @@ class Team:
         """Returns the first event starting after time (if none, an event at datetime.max)."""
         return next((e for e in self.events if time < e[0]), (datetime.max, timedelta(0), -1, -1))
 
-    def next_available(self, time, duration, travel):
+    def next_avail(self, time, duration, travel):
         """Return the next time the team has enough time for the requested activity."""
         if self.available(time, duration, travel):
             return time
