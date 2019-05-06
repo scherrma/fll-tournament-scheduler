@@ -171,7 +171,7 @@ class Tournament:
             room_max = math.ceil(teams_left / rooms_left)
             excess = rooms_left*room_max - teams_left
 
-            #divisions that cnanot be isolated are simply run together and split into rooms
+            #divisions that cannot be isolated are simply run together and split into rooms
             #goals: no room with more than two divisions, as few split rooms as possible
             #split rooms are treated as separate divisions and therefore need to have fewer
             #teams per room than other divisions to avoid pointlessly idling judge rooms
@@ -193,7 +193,7 @@ class Tournament:
         """Determines when each judging session will happen and assigns teams to those slots."""
         breaks = set(range(self.j_calib, len(self.j_slots), self.j_break[0]))
         breaks = sorted(list({0, len(self.j_slots)} | breaks))
-        times = [[self.j_start + bool(j and self.j_calib)*self.travel
+        times = [[self.j_start + bool(i and self.j_calib)*self.travel
                   + max(i - self.j_calib, 0)*self.j_break[1] + j*self.j_duration[0]
                   for j in range(breaks[i], breaks[i+1] + 1)] for i in range(len(breaks) - 1)]
         j_blockers = [(start - self.travel, duration + 2*self.travel) for start, duration
@@ -232,7 +232,7 @@ class Tournament:
                               math.floor((self._team(team_next).next_event(time_next)[0] - time_next
                                          - self.travel) / self.t_duration[rnd] - self.t_stagger/2))
 
-            if max_teams == 0 or num_matches == 0 or consec >= self.t_consec:
+            if max_teams < min(match_sizes) or num_matches == 0 or consec >= self.t_consec:
                 consec = 0
                 if num_matches and not teams_left <= max_teams <= match_sizes[-1]:
                     max_teams, num_matches = 0, 0

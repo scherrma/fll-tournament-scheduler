@@ -9,7 +9,7 @@ def sum_to(options, goal, picks, force_take_all=False):
     selected = []
     if not picks:
         selected = [0]
-    elif goal < min(options):
+    elif force_take_all and goal < min(options):
         selected = [goal]
     else:
         while goal >= min(options) and picks > 0:
