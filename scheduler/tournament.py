@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """A module containing a Tournament class for using in creating FLL qualifier schedules."""
 from datetime import timedelta, datetime
+from numpy import gcd
 import math
 import scheduler.util as util
 from scheduler.team import Team
@@ -50,49 +51,35 @@ class Tournament:
             self.schedule_block()
         else:
             raise ValueError("{} scheduling is not supported".format(self.scheduling_method))
-        print("Scheduling competition tables")
+        print("Assigning competition tables")
         self.assign_tables()
 
     def schedule_interlaced(self):
         """Top-level function controlling judge and table schedules for interlaced tournaments."""
         self.judge_interlaced()
-        print("Starting table scheduling")
 
         #determine how morning table rounds will operate, then schedule them
-        time_start = [e_start + e_length + self.travel for (e_start, e_length, *_)
-                      in self.teams[3*self.j_calib].events]
-        time_start = sorted([t for t in time_start if t >= self.j_start])
-        time_start = next((time for time in time_start if self.teams[3*self.j_calib]
-                           .available(time, self.t_duration[0], self.travel)))
-        team_idx = next((t for t in range(3*self.j_calib + 1) if
-                         self._team(t).available(time_start, self.t_duration[0], self.travel)))
-
         run_rate = 3*self.j_sets*self.t_duration[0]
         run_rate *= 1 + (self.t_consec < self.num_teams) / self.t_consec
         run_rate /= self.j_duration[0] + (self.j_break[1] / self.j_break[0] if
                                           self.j_break[0] < self.num_teams else timedelta(0))
 
-        min_early_run_rate = max(2, 2*math.ceil(run_rate/2))
-        if self.num_teams % min_early_run_rate:
-            early_avail = [self._team(team_idx - i).available(time_start - self.t_duration[0],
-                                                              self.t_duration[0], self.travel)
-                           for i in range(min_early_run_rate)]
-            if all(early_avail):
-                team_idx -= len(early_avail)
-                time_start -= self.t_duration[0]
+        time_start = max(sum(self.opening, 2*self.travel), self.j_slots[0][0])
+        current, team_start = min(((self.schedule_matches(time_start, t, run_rate,
+                                                          range(self.t_rounds)[:2]), t)
+                                   for t in range(self.num_teams)), key=lambda x: x[0][0])
 
-        current_end = datetime.max
-        backup_end = current_end
-        time_start -= self.t_duration[0]
-        while current_end <= backup_end:
-            backup_tslot, self.t_slots = self.t_slots, []
-            backup_end = current_end
-
-            time_start += self.t_duration[0]
-            current_end = self.schedule_matches(time_start, team_idx, range(min(2, self.t_rounds)),
-                                                run_rate)
-        time_start -= self.t_duration[0]
-        self.t_slots = backup_tslot
+        end = current[0]
+        time_increment = max(timedelta(minutes=1), gcd(self.t_duration[0], gcd(*self.j_duration)))
+        offsets = [i*time_increment for i in range(1, self.t_duration[0] // time_increment)]
+        offsets += [self.t_duration[0]]
+        while current[0] <= end:
+            current, offset = min(((self.schedule_matches(time_start + offset, team_start, run_rate,
+                                                          range(self.t_rounds)[:2]), offset)
+                                   for offset in offsets), key=lambda x: (x[0][0], -x[1]))
+            if current[0] <= end:
+                time_start = time_start + offset
+                end, self.t_slots = current
 
         if self.t_rounds > 1: #determine run settings for afternoon table rounds
             self.t_slots += [None]
@@ -100,8 +87,8 @@ class Tournament:
                                 - (t // (2*self.t_pairs) + t // (2*self.t_consec*self.t_pairs))
                                 * self.t_duration[2])
                             for t in range(self.num_teams)]
-            time_start = max(time_restart + [backup_end + self.lunch[2]])
-            self.schedule_matches(time_start, 0, range(2, self.t_rounds), None)
+            time_start = max(time_restart + [end + self.lunch[2]])
+            self.t_slots += self.schedule_matches(time_start, 0, None, range(2, self.t_rounds))[1]
 
     def judge_interlaced(self):
         """Generates the judging schedule for tournaments using interlaced scheduling."""
@@ -172,7 +159,7 @@ class Tournament:
             excess = rooms_left*room_max - teams_left
 
             #divisions that cannot be isolated are simply run together and split into rooms
-            #goals: no room with more than two divisions, as few split rooms as possible
+            #goals: no room with more than two divisions and as few split rooms as possible
             #split rooms are treated as separate divisions and therefore need to have fewer
             #teams per room than other divisions to avoid pointlessly idling judge rooms
             idx, spillover = 0, 0
@@ -212,7 +199,7 @@ class Tournament:
                 for room, team in filter(lambda x: x[1] is not None, enumerate(cat_teams)):
                     self.teams[team].add_event(time, self.j_duration[1], cat + 2, room)
 
-    def schedule_matches(self, time_next, team_next, rounds, run_rate):
+    def schedule_matches(self, time_next, team_next, run_rate, rounds):
         """Determines when table matches will occur and assigns teams to matches."""
         run_rate = 2*min(math.ceil((run_rate or 2*self.t_pairs)/2), self.t_pairs)
         match_sizes = [max(2, run_rate - 2), run_rate]
@@ -221,6 +208,7 @@ class Tournament:
             return self._team(t + team_next).next_avail(time_next, window, self.travel) - time_next
 
         consec = 0
+        tslots = []
         teams_left = len(rounds)*self.num_teams
         while teams_left > 0:
             rnd = rounds[len(rounds) - ((teams_left - 1) // self.num_teams + 1)]
@@ -230,7 +218,7 @@ class Tournament:
             num_matches = min(math.ceil(delay(max_teams) / self.t_duration[rnd] or
                                         teams_left / match_sizes[-1]),
                               math.floor((self._team(team_next).next_event(time_next)[0] - time_next
-                                         - self.travel) / self.t_duration[rnd] - self.t_stagger/2))
+                                          - self.travel) / self.t_duration[rnd] - self.t_stagger/2))
 
             if max_teams < min(match_sizes) or num_matches == 0 or consec >= self.t_consec:
                 consec = 0
@@ -243,13 +231,13 @@ class Tournament:
 
             for match_size in next_matches:
                 timeslot = [(t + team_next) % self.num_teams for t in range(match_size)]
-                self.t_slots += [((time_next, time_next + self.t_duration[rnd] / 2), rnd,
+                tslots += [((time_next, time_next + self.t_duration[rnd] / 2), rnd,
                                   util.rpad(timeslot, match_sizes[-1], None))]
                 time_next += self.t_duration[rnd]
                 team_next, teams_left = team_next + match_size, teams_left - match_size
             consec += len(next_matches) if next_matches != [0] else 0
 
-        return time_next
+        return time_next, tslots
 
     def assign_tables(self, assignment_passes=2):
         """Reorders the teams in self.t_slots to minimize table repetition for teams."""
@@ -291,6 +279,7 @@ class Tournament:
         """Consolidates idle matches in self.t_slots."""
         def isnull(idx):
             return self.t_slots[idx] is None or all([team is None for team in self.t_slots[idx][2]])
+        self.t_slots = self.t_slots[next(i for i in range(len(self.t_slots)) if not isnull(i)):]
         idx = 0
         while idx < len(self.t_slots):
             if isnull(idx) and self.t_slots[max(0, idx - 1)] is None:
