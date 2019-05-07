@@ -69,7 +69,7 @@ class Tournament:
                                                           range(self.t_rounds)[:2]), t)
                                    for t in range(self.num_teams)), key=lambda x: x[0][0])
 
-        end = current[0]
+        end, self.t_slots = current
         time_increment = max(timedelta(minutes=1), gcd(self.t_duration[0], gcd(*self.j_duration)))
         offsets = [i*time_increment for i in range(1, self.t_duration[0] // time_increment)]
         offsets += [self.t_duration[0]]
