@@ -51,35 +51,45 @@ class Tournament:
             self.schedule_block()
         else:
             raise ValueError("{} scheduling is not supported".format(self.scheduling_method))
-        print("Assigning competition tables")
         self.assign_tables()
 
     def schedule_interlaced(self):
         """Top-level function controlling judge and table schedules for interlaced tournaments."""
+        def run_rate():
+            rate = 3*self.j_sets*self.t_duration[0]
+            rate *= 1 + (self.t_consec < self.num_teams) / self.t_consec
+            rate /= self.j_duration[0] + (self.j_break[1] / self.j_break[0] if
+                    self.j_break[0] < self.num_teams else timedelta(0))
+            return min(util.round_to(rate, 2), 2*self.t_pairs)
+
+        matches_req = math.ceil((3*self.j_sets*self.j_break[0] - self.num_teams) / run_rate())
+        time_req = matches_req * self.t_duration[0] + self.j_duration[1] + 2*self.travel
+        time_ea = util.round_to(time_req / (self.j_break[0] - 1), timedelta(seconds=30))
+        if timedelta(0) < time_ea - self.j_duration[0] <= timedelta(minutes=1):
+            self.j_duration = (time_ea, self.j_duration[1])
+
         self.judge_interlaced()
 
-        #determine how morning table rounds will operate, then schedule them
-        run_rate = 3*self.j_sets*self.t_duration[0]
-        run_rate *= 1 + (self.t_consec < self.num_teams) / self.t_consec
-        run_rate /= self.j_duration[0] + (self.j_break[1] / self.j_break[0] if
-                                          self.j_break[0] < self.num_teams else timedelta(0))
+        print("Scheduling competition tables")
 
-        time_start = max(sum(self.opening, 2*self.travel), self.j_slots[0][0])
-        current, team_start = min(((self.schedule_matches(time_start, t, run_rate,
-                                                          range(self.t_rounds)[:2]), t)
-                                   for t in range(self.num_teams)), key=lambda x: x[0][0])
-
-        end, self.t_slots = current
         time_increment = max(timedelta(minutes=1), gcd(self.t_duration[0], gcd(*self.j_duration)))
         offsets = [i*time_increment for i in range(1, self.t_duration[0] // time_increment)]
-        offsets += [self.t_duration[0]]
-        while current[0] <= end:
-            current, offset = min(((self.schedule_matches(time_start + offset, team_start, run_rate,
-                                                          range(self.t_rounds)[:2]), offset)
-                                   for offset in offsets), key=lambda x: (x[0][0], -x[1]))
-            if current[0] <= end:
-                time_start = time_start + offset
-                end, self.t_slots = current
+        offsets += [i*self.t_duration[0] for i in range(-3, 4)]
+        offsets += [-x for x in offsets[1:]]
+
+        earliest = max(sum(self.opening, 2*self.travel), self.j_slots[0][0])
+        time_start, end = earliest, datetime.max - self.travel
+        current, best = ((datetime.max, []), 0, earliest), ((end, []), 0, earliest)
+
+        while current[0][0] != end:
+            current = min(((self.schedule_matches(time_start + offset, t, run_rate(),
+                                                  range(self.t_rounds)[:2]), t, time_start + offset)
+                           for t in range(self.num_teams) for offset in offsets
+                           if time_start + offset >= earliest),
+                          key=lambda x: (x[0][0] - x[2], x[2])) 
+            if (current[0][0] - current[2], current[2]) < (best[0][0] - best[2], best[2]):
+                best = current
+                (end, self.t_slots), team_start, time_start = current
 
         if self.t_rounds > 1: #determine run settings for afternoon table rounds
             self.t_slots += [None]
@@ -125,6 +135,8 @@ class Tournament:
                 self.j_slots[i] += [tmp[i][j::rooms] for j in range(rooms)]
         self.j_slots = [[util.rpad(room, max_room, None) for room in cat] for cat in self.j_slots]
         self.j_slots = list(zip(*[list(zip(*cat)) for cat in self.j_slots]))
+        while all([team is None for team in self.j_slots[-1][1]]):
+            self.j_slots.pop()
         if self.j_calib:
             self.j_slots = [([0], [1], [2])] + self.j_slots
         self.assign_judge_times()
@@ -178,8 +190,12 @@ class Tournament:
 
     def assign_judge_times(self):
         """Determines when each judging session will happen and assigns teams to those slots."""
-        breaks = set(range(self.j_calib, len(self.j_slots), self.j_break[0]))
-        breaks = sorted(list({0, len(self.j_slots)} | breaks))
+        if self.j_break[0] > 1 and math.ceil((len(self.j_slots) - self.j_calib - 1) / self.j_break[0])\
+                == math.ceil((len(self.j_slots) - self.j_calib - 1) / (self.j_break[0] - 1)):
+                    self.j_break = (self.j_break[0] - 1, self.j_break[1])
+
+        breaks = range(self.j_calib, len(self.j_slots) - 1 if self.j_break[1] else 0, self.j_break[0])
+        breaks = sorted(list({0, len(self.j_slots)} | set(breaks)))
         times = [[self.j_start + bool(i and self.j_calib)*self.travel
                   + max(i - self.j_calib, 0)*self.j_break[1] + j*self.j_duration[0]
                   for j in range(breaks[i], breaks[i+1] + 1)] for i in range(len(breaks) - 1)]
@@ -214,12 +230,13 @@ class Tournament:
             rnd = rounds[len(rounds) - ((teams_left - 1) // self.num_teams + 1)]
             window = (1.5 if self.t_stagger else 1)*self.t_duration[rnd]
 
-            max_teams = next(filter(delay, range(teams_left)), teams_left)
-            num_matches = min(math.ceil(delay(max_teams) / self.t_duration[rnd] or
-                                        teams_left / match_sizes[-1]),
-                              math.floor((self._team(team_next).next_event(time_next)[0] - time_next
-                                          - self.travel) / self.t_duration[rnd] - self.t_stagger/2))
-
+            max_teams, num_matches = next(filter(delay, range(teams_left)), teams_left), 0
+            if max_teams:
+                num_matches = math.floor((min(self._team(t + team_next).next_event(time_next)[0]
+                                              for t in range(max_teams)) - time_next - self.travel) 
+                                         / self.t_duration[rnd])
+                num_matches = min(num_matches, math.ceil(delay(max_teams) / self.t_duration[rnd]
+                                                         or teams_left / match_sizes[-1]))
             if max_teams < min(match_sizes) or num_matches == 0 or consec >= self.t_consec:
                 consec = 0
                 if num_matches and not teams_left <= max_teams <= match_sizes[-1]:
@@ -280,6 +297,7 @@ class Tournament:
         def isnull(idx):
             return self.t_slots[idx] is None or all([team is None for team in self.t_slots[idx][2]])
         self.t_slots = self.t_slots[next(i for i in range(len(self.t_slots)) if not isnull(i)):]
+
         idx = 0
         while idx < len(self.t_slots):
             if isnull(idx) and self.t_slots[max(0, idx - 1)] is None:
