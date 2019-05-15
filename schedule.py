@@ -19,20 +19,20 @@ def read_data(fpath):
     dfs = pandas.read_excel(fpath, sheet_name=["Team Information", "Input Form"], dtype=object)
 
     team_sheet = dfs["Team Information"]
-    column_check = ["Team Number", "Team"]
-    if all([x in team_sheet.columns for x in column_check]):
+    team_columns = ["Team Number", "Team"]
+    if all([x in team_sheet.columns for x in team_columns]):
         divisions = ("Division" in team_sheet.columns)
         if divisions:
-            column_check += ["Division"]
-        teams = team_sheet.loc[:, column_check].values
-        team_info_base = [(i, list(team_sheet.columns).index(cat) + 1) for i, cat in
-                          list(enumerate(column_check[::-1]))]
+            team_columns += ["Division"]
+        teams = team_sheet.loc[:, team_columns].values
+        roster_cols = [list(team_sheet.columns).index(cat) + 1 for cat in team_columns]
         #any time we print full team data just print the number and look the other info up
-        team_info = ["=index(indirect(\"'Team Information'!C{1}\", false),"\
-                      "match(indirect(\"RC[-{2}]\", false), "\
-                      "indirect(\"'Team Information'!C{0}\", false), 0))"
-                     .format(team_info_base[-1][1], cat, offset + 1) for offset, cat
-                     in team_info_base[:-1]]
+        team_info = [f"=index(indirect(\"'Team Information'!C{cat}\", false),"
+                      f"match(indirect(\"RC[-{offset + 1}]\", false), "
+                      f"indirect(\"'Team Information'!C{roster_cols[0]}\", false), 0))"
+                      for offset, cat in enumerate(roster_cols[:0:-1])]
+        if divisions:
+            team_info[0] = '="Div: "&' + team_info[0][1:]
     else:
         raise KeyError("Could not find columns 'Team Number' and 'Team' in 'Team Information'")
 
@@ -129,6 +129,7 @@ def export_judge_views(tment, workbook, time_fmt, team_info, event_names, rooms)
     #formatting - borders, cell merges, striped shading, etc
     col_sizes = [1 + max(len(str(text)) for text in cat) for cat in
                  zip(*[team.info(tment.divisions) for team in tment.teams])]
+    col_sizes[1] += 5*tment.divisions
     for sheet in sheets:
         basic_sheet_format(sheet, 4)
         for col in list(sheet.columns)[1:]:
@@ -191,6 +192,8 @@ def export_table_views(tment, workbook, time_fmt, team_info, rooms, tnames):
     #formatting - borders, cell merges, striped shading, etc
     col_wide = [-1, -1] + 2*tment.t_pairs*[1 + max(len(str(text)) for text in cat) for cat in
                                          zip(*[team.info(tment.divisions) for team in tment.teams])]
+    for i in range(3, len(col_wide), 3):
+        col_wide[i] += 5
     col_wide[split + 1:split + 1] = tment.t_stagger*(space*[10] + [-1])
     for sheet in [sheet_overall] + t_pair_sheets:
         basic_sheet_format(sheet, 2)
