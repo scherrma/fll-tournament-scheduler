@@ -285,11 +285,19 @@ class Tournament:
         for (times, rnd, teams) in filter(None, self.t_slots):
             teams[:] = util.rpad(teams, 2*self.t_pairs, None)
             teams[:] = [teams[tbl if self.t_stagger else i] for i, tbl in enumerate(tbl_order)]
-            for table, team in filter(lambda x: x[1] is not None, enumerate(teams)):
-                team_rnd = sum(1 for event in self._team(team).events if event[2] > 4)
+            #for table, team in filter(lambda x: x[1] is not None, enumerate(teams)):
+            #    team_rnd = sum(1 for event in self._team(team).events if event[2] > 4)
+            #    self._team(team).add_event(times[table >= util.round_to(self.t_pairs, 2)
+            #                                     and self.t_stagger],
+            #                               self.t_duration[rnd], 5 + team_rnd, table)
+
+            teams[:] = [(team, sum(event[2] > 4 for event in self._team(team).events)
+                                   if team is not None else None) for team in teams]
+            for table, (team, team_rnd) in filter(lambda x: x[1] != (None, None), enumerate(teams)):
                 self._team(team).add_event(times[table >= util.round_to(self.t_pairs, 2)
                                                  and self.t_stagger],
                                            self.t_duration[rnd], 5 + team_rnd, table)
+
         self.clean_tslots()
 
     def clean_tslots(self):

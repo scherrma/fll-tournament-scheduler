@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Module for use in scheduling one-day FLL tournaments."""
 from datetime import datetime, timedelta
+import re
 import os
 import sys
 import math
@@ -48,8 +49,16 @@ def read_data(fpath):
         travel = timedelta(minutes=param["travel_time"])
         event_names = ["Coaches' Meeting", "Opening Ceremonies", 'Project', 'Robot Design',
                        'Core Values']
-        event_names += map(str, param_sheet.loc["t_round_names"].dropna().values.tolist()[1:])
+        rnd_abbrevs = list(map(str, param_sheet.loc["t_round_names"].dropna().values.tolist()[1:]))
+        event_names += rnd_abbrevs
         t_rounds = len(event_names) - 5
+        for word in ('\\b' + word + '\\b' for word in ("round", "rnd", "rd")):
+            rnd_abbrevs = [re.sub(word, '', rnd, flags=re.I) for rnd in rnd_abbrevs]
+        rnd_abbrevs = [rnd.strip()[0] for rnd in rnd_abbrevs]
+        
+        rnd_abbrevs = [guessed if pandas.isnull(given) else str(given) for guessed, given in
+                       zip(rnd_abbrevs, param_sheet.loc["t_round_abbreviations"].values[1:])]
+
         coach_meet = (datetime.combine(datetime(1, 1, 1), param["coach_start"]),
                       timedelta(minutes=param["coach_duration"]))
         opening = (datetime.combine(datetime(1, 1, 1), param["opening_start"]),
@@ -82,9 +91,10 @@ def read_data(fpath):
 
     return ((teams, divisions, scheduling_method, travel, coach_meet, opening, lunch, j_start,
              j_sets, j_calib, j_duration, j_breaks, t_rounds, t_pairs, t_stagger, t_consec,
-             t_duration), tournament_name, (team_info, event_names, rooms, t_names))
+             t_duration), tournament_name,
+             (team_info, event_names, rnd_abbrevs, rooms, t_names))
 
-def export(tment, workbook, team_info, event_names, rooms, tnames):
+def export(tment, workbook, team_info, event_names, rnd_abbrevs, rooms, tnames):
     """Exports schedule to an xlsx file; uses the tournament name for the file name."""
     print("Exporting schedule")
     for sheet in [ws for ws in workbook.sheetnames if ws != 'Team Information']:
@@ -92,7 +102,7 @@ def export(tment, workbook, team_info, event_names, rooms, tnames):
 
     time_fmt = "%{}I:%M %p".format('#' if sys.platform == "win32" else '-')
     export_judge_views(tment, workbook, time_fmt, team_info, event_names, rooms)
-    export_table_views(tment, workbook, time_fmt, team_info, rooms, tnames)
+    export_table_views(tment, workbook, time_fmt, team_info, rnd_abbrevs, rooms, tnames)
     export_team_views(tment, workbook, time_fmt, team_info, event_names, rooms)
 
 def export_judge_views(tment, workbook, time_fmt, team_info, event_names, rooms):
@@ -149,11 +159,11 @@ def export_judge_views(tment, workbook, time_fmt, team_info, event_names, rooms)
                 sheet.merge_cells(start_row=3, start_column=2 + team_width*(tment.j_sets*i + 1),
                                   end_row=3, end_column=1 + team_width*(tment.j_sets*(i + 1)))
 
-def export_table_views(tment, workbook, time_fmt, team_info, rooms, tnames):
+def export_table_views(tment, workbook, time_fmt, team_info, rnd_abbrevs, rooms, tnames):
     """Adds the competition table focused sheets to the output workbook."""
     thin = styles.Side(border_style='thin', color='000000')
     thick = styles.Side(border_style='thick', color='000000')
-    team_width = 1 + len(team_info)
+    team_width = 2 + len(team_info)
     space = 2
     split = 1 + 2*team_width*((tment.t_pairs + 1) // 2)
     staggered = [tment.t_stagger and i > (tment.t_pairs - 1) // 2 for i in range(tment.t_pairs)]
@@ -180,7 +190,7 @@ def export_table_views(tment, workbook, time_fmt, team_info, rooms, tnames):
                 sheet.append([slot[0][staggered[i]].strftime(time_fmt)])
         else:
             line = sum([(team_width - 1)*[''] + ['None'] if t is None else
-                        [tment.teams[t].num] + team_info for t in slot[2]],
+                        [rnd_abbrevs[rnd], tment.teams[t].num] + team_info for t, rnd in slot[2]],
                        [slot[0][0].strftime(time_fmt)])
             line[split:split] = space*[''] + [slot[0][1].strftime(time_fmt)] if tment.t_stagger else []
             sheet_overall.append(line)
@@ -190,14 +200,16 @@ def export_table_views(tment, workbook, time_fmt, team_info, rooms, tnames):
                 t_pair_sheets[t_pair].append([time_str] + line[ls_start:ls_start + 2*team_width])
 
     #formatting - borders, cell merges, striped shading, etc
-    col_wide = [-1, -1] + 2*tment.t_pairs*[1 + max(len(str(text)) for text in cat) for cat in
-                                         zip(*[team.info(tment.divisions) for team in tment.teams])]
-    for i in range(3, len(col_wide), 3):
-        col_wide[i] += 5
+    col_wide = [1 + max(len(str(rnd)) for rnd in rnd_abbrevs)]
+    col_wide += [1 + max(len(str(text)) for text in cat) for cat in zip(*[team.info(tment.divisions)
+                                                                          for team in tment.teams])]
+    if tment.divisions:
+        col_wide[2] += 4
+    col_wide = [-1] + 2*tment.t_pairs*col_wide
     col_wide[split + 1:split + 1] = tment.t_stagger*(space*[10] + [-1])
     for sheet in [sheet_overall] + t_pair_sheets:
         basic_sheet_format(sheet, 2)
-        for col, width in [(col, width) for col, width in enumerate(col_wide) if width > 0]:
+        for col, width in [(col, width) for col, width in enumerate(col_wide, 1) if width > 0]:
             sheet.column_dimensions[get_column_letter(col)].width = width
         thick_border = [1 + 2*i*team_width for i in range(tment.t_pairs + 1)]
         if tment.t_stagger:
