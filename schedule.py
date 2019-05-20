@@ -74,7 +74,9 @@ def read_data(fpath):
                   for key in ("j_project_rooms", "j_robot_rooms", "j_values_rooms")]
         j_calib = (param["j_calib"] == "Yes") and not divisions
         j_duration = (timedelta(minutes=param["j_duration"]), timedelta(minutes=10))
-        j_breaks = (param["j_consec"] or len(teams), timedelta(minutes=param["j_break"]))
+        j_breaks = (param["j_consec"], timedelta(minutes=param["j_break"]))
+        if j_breaks[0] == 0:
+            j_breaks = (3, timedelta(0))
 
         t_pairs = param["t_pairs"]
         t_stagger = (param["t_stagger"] == 'Yes')

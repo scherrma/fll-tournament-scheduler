@@ -194,19 +194,19 @@ class Tournament:
                 == math.ceil((len(self.j_slots) - self.j_calib - 1) / (self.j_break[0] - 1)):
                     self.j_break = (self.j_break[0] - 1, self.j_break[1])
 
-        breaks = range(self.j_calib, len(self.j_slots) - 1 if self.j_break[1] else 0, self.j_break[0])
+        breaks = range(self.j_calib, len(self.j_slots) - 1, self.j_break[0])
         breaks = sorted(list({0, len(self.j_slots)} | set(breaks)))
         times = [[self.j_start + bool(i and self.j_calib)*self.travel
                   + max(i - self.j_calib, 0)*self.j_break[1] + j*self.j_duration[0]
                   for j in range(breaks[i], breaks[i+1] + 1)] for i in range(len(breaks) - 1)]
         j_blockers = [(start - self.travel, duration + 2*self.travel) for start, duration
                       in (self.opening, self.coach_meet)] + [self.lunch[1:]]
+
         for start, length in sorted(j_blockers):
             delay = max(timedelta(0), min(length, start + length - times[0][0]))
             delay -= self.j_break[1] if start >= times[0][-1] else timedelta(0)
             times = [[time + (start < cycle[-1])*delay for time in cycle] for cycle in times]
         times = [time for cycle in times for time in cycle]
-
         for breaktime in breaks[-2:0:-1]:
             self.j_slots.insert(breaktime, None)
         self.j_slots = list(zip(times, self.j_slots))
@@ -214,6 +214,9 @@ class Tournament:
             for cat, cat_teams in enumerate(teams):
                 for room, team in filter(lambda x: x[1] is not None, enumerate(cat_teams)):
                     self.teams[team].add_event(time, self.j_duration[1], cat + 2, room)
+        for i in range(len(self.j_slots) - 1, 0, -1):
+            if self.j_slots[i][0] == self.j_slots[i - 1][0]:
+                del self.j_slots[i - 1]
 
     def schedule_matches(self, time_next, team_next, run_rate, rounds):
         """Determines when table matches will occur and assigns teams to matches."""
@@ -285,12 +288,6 @@ class Tournament:
         for (times, rnd, teams) in filter(None, self.t_slots):
             teams[:] = util.rpad(teams, 2*self.t_pairs, None)
             teams[:] = [teams[tbl if self.t_stagger else i] for i, tbl in enumerate(tbl_order)]
-            #for table, team in filter(lambda x: x[1] is not None, enumerate(teams)):
-            #    team_rnd = sum(1 for event in self._team(team).events if event[2] > 4)
-            #    self._team(team).add_event(times[table >= util.round_to(self.t_pairs, 2)
-            #                                     and self.t_stagger],
-            #                               self.t_duration[rnd], 5 + team_rnd, table)
-
             teams[:] = [(team, sum(event[2] > 4 for event in self._team(team).events)
                                    if team is not None else None) for team in teams]
             for table, (team, team_rnd) in filter(lambda x: x[1] != (None, None), enumerate(teams)):
