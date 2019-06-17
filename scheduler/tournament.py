@@ -220,8 +220,8 @@ class Tournament:
 
     def schedule_matches(self, time_next, team_next, run_rate, rounds):
         """Determines when table matches will occur and assigns teams to matches."""
-        run_rate = 2*min(math.ceil((run_rate or 2*self.t_pairs)/2), self.t_pairs)
-        match_sizes = [max(2, run_rate - 2), run_rate]
+        ideal_run_rate = 2*min(math.ceil((run_rate or 2*self.t_pairs)/2), self.t_pairs)
+        #match_sizes = [max(2, run_rate - 2), run_rate]
 
         def delay(t):
             return self._team(t + team_next).next_avail(time_next, window, self.travel) - time_next
@@ -232,6 +232,8 @@ class Tournament:
         while teams_left > 0:
             rnd = rounds[len(rounds) - ((teams_left - 1) // self.num_teams + 1)]
             window = (1.5 if self.t_stagger else 1)*self.t_duration[rnd]
+            run_rate = min(ideal_run_rate, 1 + int(self.travel / self.t_duration[rnd])) 
+            match_sizes = (max(2, run_rate - 2), run_rate)
 
             max_teams, num_matches = next(filter(delay, range(teams_left)), teams_left), 0
             if max_teams:
