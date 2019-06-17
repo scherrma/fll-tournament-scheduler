@@ -232,7 +232,7 @@ class Tournament:
         while teams_left > 0:
             rnd = rounds[len(rounds) - ((teams_left - 1) // self.num_teams + 1)]
             window = (1.5 if self.t_stagger else 1)*self.t_duration[rnd]
-            run_rate = min(ideal_run_rate, 1 + int(self.travel / self.t_duration[rnd])) 
+            run_rate = min(ideal_run_rate, int(self.travel / self.t_duration[rnd])) 
             match_sizes = (max(2, run_rate - 2), run_rate)
 
             max_teams, num_matches = next(filter(delay, range(teams_left)), teams_left), 0
