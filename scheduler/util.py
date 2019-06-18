@@ -1,4 +1,5 @@
 #  !/usr/bin/env python3
+import math
 """Utility functions for the fll tournament scheduler."""
 def sum_to(options, goal, picks, force_take_all=False):
     """Returns numbers that sum as close to a goal value as possible.
@@ -27,7 +28,7 @@ def nth_occurence(ls, val, n):
 
 def round_to(val, base):
     """Returns the least integer multiple of base greater than val."""
-    return val + -val % base
+    return math.ceil(val / base) * base
 
 def rpad(ls, size, val):
     """Right-pads a list with a prescribed value to a set length."""
