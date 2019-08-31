@@ -47,11 +47,11 @@ def read_data(fpath):
         tournament_name = param["tournament_name"]
         scheduling_method = param["scheduling_method"]
         travel = timedelta(minutes=param["travel_time"])
-        event_names = ["Coaches' Meeting", "Opening Ceremonies", 'Project', 'Robot Design',
-                       'Core Values']
+        event_names = ["Coaches' Meeting", 'Opening Ceremonies',
+                       'Project', 'Robot Design', 'Core Values']
         rnd_abbrevs = list(map(str, param_sheet.loc["t_round_names"].dropna().values.tolist()[1:]))
+        t_rounds = len(rnd_abbrevs)
         event_names += rnd_abbrevs
-        t_rounds = len(event_names) - 5
         for word in ('\\b' + word + '\\b' for word in ("round", "rnd", "rd")):
             rnd_abbrevs = [re.sub(word, '', rnd, flags=re.I) for rnd in rnd_abbrevs]
         rnd_abbrevs = [rnd.strip()[0] for rnd in rnd_abbrevs]
@@ -238,11 +238,11 @@ def export_team_views(tment, workbook, time_fmt, team_info, event_names, rooms):
 
     for team in sorted(tment.teams, key=lambda t: t.num):
         ws_chron.append([team.num] + team_info
-                        + ['{} at {}, {}'.format(event_names[cat], time.strftime(time_fmt),
-                                                 rooms[min(5, cat)][loc])
+                        + [f'{event_names[cat]} at {time.strftime(time_fmt)}, '
+                           + rooms[min(5, cat)][loc]
                            for (time, duration, cat, loc) in team.events])
         ws_event.append([team.num] + team_info
-                        + ['{}, {}'.format(time.strftime(time_fmt), rooms[min(5, cat)][loc])
+                        + [f'{time.strftime(time_fmt)}, {rooms[min(6, cat)][loc]}'
                            for (time, length, cat, loc)
                            in sorted(team.events, key=lambda x: x[2])[2:]])
 
@@ -295,8 +295,22 @@ def generate_schedule():
         logic_params, tournament_name, io_params = read_data(fpath)
         tment = Tournament(*logic_params)
         tment.schedule()
-        for team in [team for team in tment.teams if team.closest_events() < tment.travel]:
-            print(team, "has two events separated by only", team.closest_events())
+
+        error = False
+        for team in tment.teams:
+            if team.closest_events() < tment.travel:
+                print(f'{team} has two events separated by only {team.closest_events()}')
+                error = True
+            if team.next_avail(tment.lunch[0], tment.lunch[2], timedelta(0)) > tment.lunch[1]:
+                team_sched = [f'\n\tEvent type {ev[2]} at {ev[0].strftime("%r")} for {ev[1]}'
+                              for ev in team.events]
+                print(f'{team} does not have {tment.lunch[2]} for lunch between',
+                      f"{tment.lunch[0].strftime('%r')} and {tment.lunch[1].strftime('%r')};",
+                      'their schedule is:', ''.join(team_sched))
+                error = True
+        if error:
+            print("That shouldn't be happening - you've hit a bug.",
+                  "Can you send me a copy of your input sheet? Thanks.")
 
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", category=UserWarning)

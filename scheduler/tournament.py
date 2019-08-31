@@ -68,7 +68,7 @@ class Tournament:
         if timedelta(0) < time_ea - self.j_duration[0] <= timedelta(minutes=1):
             self.j_duration = (time_ea, self.j_duration[1])
 
-        self.judge_interlaced()
+        jlunch, jend = self.judge_interlaced()
 
         print("Scheduling competition tables")
 
@@ -83,13 +83,15 @@ class Tournament:
 
         while current[0][0] != end:
             current = min(((self.schedule_matches(time_start + offset, t, run_rate(),
-                                                  range(self.t_rounds)[:2]), t, time_start + offset)
+                                                  range(self.t_rounds)[:2], True, jlunch, jend),
+                                                  t, time_start + offset)
                            for t in range(self.num_teams) for offset in offsets
                            if time_start + offset >= earliest),
                           key=lambda x: (x[0][0] - x[2], x[2])) 
             if (current[0][0] - current[2], current[2]) < (best[0][0] - best[2], best[2]):
                 best = current
                 (end, self.t_slots), team_start, time_start = current
+
 
         if self.t_rounds > 1: #determine run settings for afternoon table rounds
             self.t_slots += [None]
@@ -139,7 +141,7 @@ class Tournament:
             self.j_slots.pop()
         if self.j_calib:
             self.j_slots = [([0], [1], [2])] + self.j_slots
-        self.assign_judge_times()
+        return self.assign_judge_times()
 
     def schedule_block(self):
         """Generates judging and table schedules using block scheduling."""
@@ -207,6 +209,9 @@ class Tournament:
             delay -= self.j_break[1] if start >= times[0][-1] else timedelta(0)
             times = [[time + (start < cycle[-1])*delay for time in cycle] for cycle in times]
         times = [time for cycle in times for time in cycle]
+        tdeltas = [(times[i + 1] - times[i], times[i] + self.j_duration[1]) for i in range(len(times) - 1)]
+        lunch = max(tdeltas)[1] + self.j_duration if max(tdeltas)[0] > self.lunch[2] else None
+
         for breaktime in breaks[-2:0:-1]:
             self.j_slots.insert(breaktime, None)
         self.j_slots = list(zip(times, self.j_slots))
@@ -217,8 +222,38 @@ class Tournament:
         for i in range(len(self.j_slots) - 1, 0, -1):
             if self.j_slots[i][0] == self.j_slots[i - 1][0]:
                 del self.j_slots[i - 1]
+        return lunch, self.j_slots[-1][0] + self.j_duration[1]
 
-    def schedule_matches(self, time_next, team_next, run_rate, rounds):
+    def schedule_matches(self, time_next, team_next, run_rate, rounds, lunch=False, jlunch=None, jend=None):
+        time_next, tslots = self.matches_inner(time_next, team_next, run_rate, rounds)
+        #print(f"jend: {jend}, time_next: {time_next}, jlunch: {jlunch}, \tself.lunch: {self.lunch}")
+        if lunch:
+            if self.lunch[1] > time_next:
+                #if table rounds finish before lunch time, eat lunch after table rounds
+                #unless judging happened and ends after the table rounds did
+                #in which case eat lunch after the judging rounds unless they went past lunch time
+                #in which case eat lunch during the judging lunch break
+                if jend is None or jend < time_next:
+                    lunch_time = time_next
+                else:
+                    lunch_time = jlunch or jend
+            else:
+                #otherwise table rounds must be interrupted for lunch
+                #if there was judging but no lunch break eat lunch after judging
+                #if there was judging lunch eat after judging
+                if jend is None:
+                    lunch_time = self.lunch[1]
+                else:
+                    lunch_time = jlunch or jend
+
+            for team in self.teams:
+                team.add_event(lunch_time, self.lunch[2], -1, None)
+            time_next, tslots = self.matches_inner(time_next, team_next, run_rate, rounds)
+            for team in self.teams:
+                team.events = [ev for ev in team.events if ev[2] != -1]
+        return time_next, tslots
+
+    def matches_inner(self, time_next, team_next, run_rate, rounds):
         """Determines when table matches will occur and assigns teams to matches."""
         ideal_run_rate = 2*min(math.ceil((run_rate or 2*self.t_pairs)/2), self.t_pairs)
 
@@ -291,7 +326,7 @@ class Tournament:
         for (times, rnd, teams) in filter(None, self.t_slots):
             teams[:] = util.rpad(teams, 2*self.t_pairs, None)
             teams[:] = [teams[tbl if self.t_stagger else i] for i, tbl in enumerate(tbl_order)]
-            teams[:] = [(team, sum(event[2] > 4 for event in self._team(team).events)
+            teams[:] = [(team, sum(event[2] > 5 for event in self._team(team).events)
                                    if team is not None else None) for team in teams]
             for table, (team, team_rnd) in filter(lambda x: x[1] != (None, None), enumerate(teams)):
                 self._team(team).add_event(times[table >= util.round_to(self.t_pairs, 2)
