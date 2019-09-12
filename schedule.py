@@ -238,11 +238,11 @@ def export_team_views(tment, workbook, time_fmt, team_info, event_names, rooms):
 
     for team in sorted(tment.teams, key=lambda t: t.num):
         ws_chron.append([team.num] + team_info
-                        + [f'{event_names[cat]} at {time.strftime(time_fmt)}, '
+                        + [f'{event_names[cat]} at {time.strftime(time_fmt)} for {duration}, '
                            + rooms[min(5, cat)][loc]
                            for (time, duration, cat, loc) in team.events])
         ws_event.append([team.num] + team_info
-                        + [f'{time.strftime(time_fmt)}, {rooms[min(6, cat)][loc]}'
+                        + [f'{time.strftime(time_fmt)}, {rooms[min(5, cat)][loc]}'
                            for (time, length, cat, loc)
                            in sorted(team.events, key=lambda x: x[2])[2:]])
 
@@ -298,16 +298,19 @@ def generate_schedule():
 
         error = False
         for team in tment.teams:
+            t_error = False
             if team.closest_events() < tment.travel:
+                t_error = True
                 print(f'{team} has two events separated by only {team.closest_events()}')
-                error = True
             if team.next_avail(tment.lunch[0], tment.lunch[2], timedelta(0)) > tment.lunch[1]:
-                team_sched = [f'\n\tEvent type {ev[2]} at {ev[0].strftime("%r")} for {ev[1]}'
-                              for ev in team.events]
+                t_error = True
                 print(f'{team} does not have {tment.lunch[2]} for lunch between',
-                      f"{tment.lunch[0].strftime('%r')} and {tment.lunch[1].strftime('%r')};",
-                      'their schedule is:', ''.join(team_sched))
+                      f"{tment.lunch[0].strftime('%r')} and {tment.lunch[1].strftime('%r')}")
+            if t_error:
                 error = True
+                team_sched = [f'\tEvent type {ev[2]} at {ev[0].strftime("%r")} for {ev[1]}'
+                              for ev in team.events]
+                print('\n'.join(team_sched), '\n')
         if error:
             print("That shouldn't be happening - you've hit a bug.",
                   "Can you send me a copy of your input sheet? Thanks.")
