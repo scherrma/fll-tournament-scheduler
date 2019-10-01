@@ -52,8 +52,6 @@ class Tournament:
         else:
             raise ValueError("{} scheduling is not supported".format(self.scheduling_method))
         self.assign_tables()
-        #print('\n'.join(map(str, self.t_slots)))
-        #print('\n'.join(map(str, self.j_slots)))
 
     def schedule_interlaced(self):
         """Top-level function controlling judge and table schedules for interlaced tournaments."""
@@ -70,7 +68,7 @@ class Tournament:
         if timedelta(0) < time_ea - self.j_duration[0] <= timedelta(minutes=1):
             self.j_duration = (time_ea, self.j_duration[1])
 
-        jlunch, jend = self.judge_interlaced()
+        jlunch, jend = self.judge_interlaced_calib() if self.j_calib else self.judge_interlaced()
 
         print("Scheduling competition tables")
 
@@ -89,17 +87,18 @@ class Tournament:
                                                   t, time_start + offset)
                            for t in range(self.num_teams) for offset in offsets
                            if time_start + offset >= earliest),
-                          key=lambda x: (x[2], x[0][0] - x[2])) 
+                          key=lambda x: (x[2], x[0][0] - x[2], x[2])) 
             if (current[2], current[0][0] - current[2]) < (best[2], best[0][0] - best[2]):
                 best = current
                 (end, self.t_slots), team_start, time_start = current
+                #print(f'new best: start with {team_start} at {time_start.strftime("%r")}, end at {end.strftime("%r")}')
 
         if self.t_rounds > 1: #determine run settings for afternoon table rounds
             time_restart = [sum(self._team(t).events[-1][:2], self.travel
                                 - (t // (2*self.t_pairs) + t // (2*self.t_consec*self.t_pairs))
                                 * self.t_duration[2])
                             for t in range(self.num_teams)]
-            time_start = max(time_restart + [end])# + self.lunch[2]])
+            time_start = max(time_restart + [end + max(self.t_duration[1:3])])# + self.lunch[2]])
             self.t_slots += [((self.t_slots[-1][0][0] + mdelta*self.t_duration[0],
                                self.t_slots[-1][0][1] + mdelta*self.t_duration[0]),
                               None, 2*self.t_pairs*[None]) for mdelta in
@@ -107,45 +106,45 @@ class Tournament:
  
             self.t_slots += self.schedule_matches(time_start, team_start, None, range(2, self.t_rounds))[1]
 
-    def judge_interlaced(self):
-        """Generates the judging schedule for tournaments using interlaced scheduling."""
-        max_room = max([math.ceil(len(teams) / rooms) for teams, rooms in self.divs])
-        most_rooms = max([rooms for teams, rooms in self.divs])
+    def judge_interlaced(self): 
+        """Generates the judging schedule for tournaments using interlaced scheduling.
+        
+           Does not work for tournaments with calibration rounds"""
+        max_room = max(math.ceil(len(teams) / rooms) for rooms, teams in self.divs)
+        self.divs = [(rooms, util.rpad(teams, util.round_to(len(teams), rooms), None))
+                     for rooms, teams in self.divs]
+        self.divs = [(rooms, sum(util.mpad(util.chunks(teams, rooms),
+                                           max_room, rooms * [None]), []))
+                     for rooms, teams in self.divs]
 
-        #teams are selected three times (once for each category) in monotonically increaseing order
-        #so team 2 will first see judges no later than team 1's second trip but no earlier than
-        #team 1's first trip
-        picks = [util.rpad(rooms*[i], most_rooms, None) for i, (tms, rooms) in enumerate(self.divs)]
-        pick_order = math.ceil(max_room / 3)*[val for div_picks in zip(*picks)
-                                              for val in 3*div_picks if val is not None]
+        max_room = max(math.ceil(len(div_teams) / rooms) for rooms, div_teams in self.divs)
+        jrooms = [div_teams[i::rooms] for rooms, div_teams in self.divs for i in range(rooms)]
+        jrooms = [util.rotate(jrooms[room], math.ceil(i * max_room / 3)) for i in range(3)
+                  for room in range(self.j_sets)]
 
-        for div, (teams, rooms) in enumerate(self.divs):
-            last_team = util.nth_occurence(pick_order, div, len(teams))
-            pick_order = [x for idx, x in enumerate(pick_order) if idx <= last_team or x != div]
+        self.teams = list({team : None for room in zip(*jrooms) for team in room if team is not None})
+        team_dict = {team : i for i, team in enumerate(self.teams)}
+        team_dict[None] = None
 
-        #to ensure teams stay in order we sometimes idle judging rooms
-        excess = min([-len(teams) % 3 for teams, rooms in self.divs if
-                      math.ceil(len(teams) / rooms) == max_room])
-        div_teams = [util.rpad([i for i, j in enumerate(pick_order) if j == div],
-                               self.divisions*(3*math.ceil(max_room/3)*rooms - excess), None)
-                     for div, (teams, rooms) in enumerate(self.divs)]
+        jrooms = [[team_dict[team] for team in room] for room in jrooms]
+        self.j_slots = [util.chunks(tslot, self.j_sets) for tslot in zip(*jrooms)]
 
-        team_order = [list(zip(idxs, teams)) for idxs, (teams, rooms) in zip(div_teams, self.divs)]
-        self.teams = [team for idx, team in sorted(sum(list(team_order), []))]
+        return self.assign_judge_times()
 
-        self.j_slots = [[], [], []]
-        for teams, (_, rooms) in zip(div_teams, self.divs):
-            rot_dir = 1 + bool(-len(teams) % 3 == 2)
-            tmp = [sum([teams[(j + i*rot_dir) % 3 : len(teams) : 3] for i in range(3)],
-                       [])[self.j_calib:] for j in range(3)]
-            for i in range(3):
-                self.j_slots[i] += [tmp[i][j::rooms] for j in range(rooms)]
-        self.j_slots = [[util.rpad(room, max_room, None) for room in cat] for cat in self.j_slots]
-        self.j_slots = list(zip(*[list(zip(*cat)) for cat in self.j_slots]))
-        while all([team is None for team in self.j_slots[-1][1]]):
-            self.j_slots.pop()
-        if self.j_calib:
-            self.j_slots = [([0], [1], [2])] + self.j_slots
+    def judge_interlaced_calib(self):
+        """Generates the judging schedule for tournaments using interlaced scheduling.
+        
+           Does not work for tournaments with divisions"""
+        teams = list(range(len(self.teams)))
+        rot_dir = 1 + (len(teams) % 3 == 1)
+
+        jslots = [sum([teams[(cat + j*rot_dir) % 3::3] for j in range(3)], [])
+                  for cat in range(3)]
+        jslots = [cat[:1] + (self.j_sets - 1)*[None] + cat[1:] for cat in jslots]
+        self.j_slots = list(zip(*[util.chunks(cat, self.j_sets) for cat in jslots]))
+        self.j_slots[-1] = [util.rpad(cat, self.j_sets, None) for cat in self.j_slots[-1]]
+        self.j_slots[0] = ([0], [1], [2])
+
         return self.assign_judge_times()
 
     def schedule_block(self):
@@ -153,48 +152,34 @@ class Tournament:
         raise NotImplementedError("Block scheduling is not implemented yet")
 
     def split_divisions(self):
-        """Sets self.divs to a list of (teams, rooms for those teams) based on division."""
-        if not self.divisions:
-            self.divs = [(self.teams, self.j_sets)]
-        room_max = max(12, math.ceil(self.num_teams / self.j_sets))
-
-        self.divs = [(teams, math.ceil(len(teams) / room_max)) for teams in
-                     [[team for team in self.teams if team.div == div] for div in
-                      {team.div for team in self.teams}]]
-        self.divs.sort(key=lambda div: -len(div[0]) % room_max)
-
-        if sum([rooms for _, rooms in self.divs]) > self.j_sets:
-            room_divs, impure_divs = [], []
+        """Sets self.divs to a list of (rooms for teams, teams) based on division."""
+        max_room = max(12, math.ceil(self.num_teams / self.j_sets) + 1)
+        rm_divs = [[team for team in self.teams if team.div == div]
+                     for div in {team.div for team in self.teams}]
+        rm_divs = [(math.ceil(len(div) / max_room), div) for div in rm_divs]
+        
+        total_room_req = sum(rooms for rooms, _ in rm_divs)
+        if total_room_req > self.j_sets:
+            self.divs, mixed_div = [], []
             teams_left, rooms_left = self.num_teams, self.j_sets
-            for teams, rooms in self.divs:
-                if (-len(teams) // room_max + rooms_left) * room_max >= teams_left - len(teams):
-                    room_divs.append((teams, rooms))
-                    teams_left -= len(teams)
-                    rooms_left -= rooms
+            for rooms_req, div_teams in rm_divs:
+                if teams_left - len(div_teams) <= (rooms_left - rooms_req) * max_room:
+                    self.divs.append((rooms_req, div_teams))
+                    teams_left -= len(div_teams)
+                    rooms_left -= rooms_req
                 else:
-                    impure_divs += [teams]
-
-            room_max = math.ceil(teams_left / rooms_left)
-            excess = rooms_left*room_max - teams_left
-
-            #divisions that cannot be isolated are simply run together and split into rooms
-            #goals: no room with more than two divisions and as few split rooms as possible
-            #split rooms are treated as separate divisions and therefore need to have fewer
-            #teams per room than other divisions to avoid pointlessly idling judge rooms
-            idx, spillover = 0, 0
-            impure_teams = sum(impure_divs, [])
-            for i, teams in enumerate(impure_divs):
-                skips = int(i < excess % len(impure_divs)) + (excess // len(impure_divs))
-                pure = ((len(teams) - spillover) // room_max) * room_max - max(0, skips - 1)
-                room_divs.append((impure_teams[idx:idx + pure], math.ceil(pure / room_max)))
-
-                idx += pure
-                room_divs.append((impure_teams[idx:idx + room_max - bool(skips)], 1))
-                idx += room_max - bool(skips)
-                spillover += pure + room_max - bool(skips) - len(teams)
-            self.divs = [(teams, rooms) for teams, rooms in room_divs if teams]
-        self.divs.sort(key=lambda x: sorted(list({team.div for team in x[0]})))
-
+                    mixed_div += div_teams
+            if teams_left:
+                self.divs.append((rooms_left, mixed_div))
+        else:
+            self.divs = rm_divs
+            for i in range(self.j_sets - total_room_req):
+                _, slow_div = max((len(teams) / rooms, idx)
+                                  for idx, (rooms, teams) in enumerate(self.divs))
+                rooms, teams = self.divs[slow_div]
+                self.divs[slow_div] = (rooms + 1, teams)
+        self.divs.sort(key=lambda x: sorted(list({team.div for team in x[1] if team})))
+ 
     def assign_judge_times(self):
         """Determines when each judging session will happen and assigns teams to those slots."""
         if self.j_break[0] > 1 and math.ceil((len(self.j_slots) - self.j_calib - 1) / self.j_break[0])\
@@ -252,7 +237,6 @@ class Tournament:
 
     def matches_inner(self, time_next, team_next, run_rate, rounds):
         """Determines when table matches will occur and assigns teams to matches."""
-        #print('---')
         ideal_run_rate = 2*min(math.ceil((run_rate or 2*self.t_pairs)/2), self.t_pairs)
 
         def delay(t):
@@ -282,7 +266,6 @@ class Tournament:
                 if num_matches and not teams_left <= max_teams <= match_sizes[-1]:
                     max_teams, num_matches = 0, 0
 
-            #print('time:', time_next.strftime('%r'), '\tteam_next:', team_next % self.num_teams, '\tmax_teams:', max_teams, '\tnum_matches:', num_matches)
             next_matches = util.sum_to(match_sizes, max_teams, num_matches, max_teams >= teams_left)
             next_matches = next_matches[:self.t_consec - consec]
             next_matches = util.first_at_least(next_matches, (teams_left - 1) % self.num_teams + 1)

@@ -34,6 +34,13 @@ def rpad(ls, size, val):
     """Right-pads a list with a prescribed value to a set length."""
     return ls + (size - len(ls))*[val]
 
+def mpad(ls, size, val):
+    if size > len(ls):
+        step = 1 / (size / len(ls) - 1)
+        for i in range(size - len(ls), 0, -1):
+            ls.insert(int((i + 1/2) * step), val)
+    return ls
+
 def first_at_least(ls, minimum):
     """Returns the first N elements of a list that sum to at least minimum (in-order)."""
     idx, total = 0, 0
@@ -41,3 +48,10 @@ def first_at_least(ls, minimum):
         total += ls[idx]
         idx += 1
     return ls[:idx]
+
+def rotate(ls, n):
+    n = n % len(ls)
+    return ls[n : ] + ls[ : n]
+
+def chunks(ls, n):
+    return [ls[i : i + n] for i in range(0, len(ls), n)]
