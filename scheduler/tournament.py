@@ -52,12 +52,12 @@ class Tournament:
         else:
             raise ValueError("{} scheduling is not supported".format(self.scheduling_method))
         self.assign_tables()
-        for tslot in self.t_slots:
-            if tslot is None:
-                print('\n')
-            else:
-                times, rnd, teams = tslot
-                print(times[0].strftime('%r') + ':', rnd, teams)
+        #for tslot in self.t_slots:
+        #    if tslot is None:
+        #        print('\n')
+        #    else:
+        #        times, rnd, teams = tslot
+        #        print(times[0].strftime('%r') + ':', rnd, teams)
 
     def schedule_interlaced(self):
         """Top-level function controlling judge and table schedules for interlaced tournaments."""
@@ -108,9 +108,7 @@ class Tournament:
                            if any(team is not None for team in teams)]
             ref_lunch = max(match_times[i][0] - max(self.lunch[0], match_times[i-1][1])
                             for i in range(1, len(match_times))) > self.lunch[2]
-            print('end:', end.strftime('%r'))
             time_start = end + (max(self.t_duration[1:3]) if ref_lunch else self.lunch[2])
-            print('time_start:', time_start.strftime('%r'))
 
             end, time_start, t_offset = min((self.schedule_matches(time_start + offset,
                                                                  (t_off + team_start) % self.num_teams,
