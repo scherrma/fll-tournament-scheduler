@@ -52,12 +52,6 @@ class Tournament:
         else:
             raise ValueError("{} scheduling is not supported".format(self.scheduling_method))
         self.assign_tables()
-        #for tslot in self.t_slots:
-        #    if tslot is None:
-        #        print('\n')
-        #    else:
-        #        times, rnd, teams = tslot
-        #        print(times[0].strftime('%r') + ':', rnd, teams)
 
     def schedule_interlaced(self):
         """Top-level function controlling judge and table schedules for interlaced tournaments."""
@@ -84,10 +78,9 @@ class Tournament:
         offsets += [-x for x in offsets[1:]]
 
         earliest = max(sum(self.opening, 2*self.travel), self.j_slots[0][0])
-        time_start, end = earliest, datetime.max - self.travel
-        current, best = ((datetime.max, []), 0, earliest), ((end, []), 0, earliest)
-
-        while current[0][0] != end:
+        current, time_start = None, earliest
+        best = ((datetime.max - self.travel, []), 0, earliest)
+        while not current:
             current = min(((self.schedule_matches(time_start + offset, t, run_rate(),
                                                   range(self.t_rounds)[:2], True, jlunch, jend),
                                                   t, time_start + offset)
@@ -95,8 +88,8 @@ class Tournament:
                            if time_start + offset >= earliest),
                           key=lambda x: (x[0][0], x[0][0] - x[2])) 
             if (current[0][0], current[0][0] - current[2]) < (best[0][0], best[0][0] - best[2]):
-                best = current
-                (end, self.t_slots), team_start, time_start = current
+                best, current = current, False
+                (end, self.t_slots), team_start, time_start = best 
 
         if self.t_rounds > 1: #determine run settings for afternoon table rounds
             for team in self.teams:
@@ -110,13 +103,18 @@ class Tournament:
                             for i in range(1, len(match_times))) > self.lunch[2]
             time_start = end + (max(self.t_duration[1:3]) if ref_lunch else self.lunch[2])
 
-            end, time_start, t_offset = min((self.schedule_matches(time_start + offset,
-                                                                 (t_off + team_start) % self.num_teams,
-                                                                 None, range(self.t_rounds - 2))[0],
-                                           time_start + offset, t_off)
-                                           for offset in [offset for offset in offsets if offset >= timedelta(0)]
-                                          for t_off in range(math.ceil(self.num_teams / 3)))
-            team_start += t_offset
+            current, end = None, datetime.max
+            while not current:
+                current = min((self.schedule_matches(time_start + self.t_duration[2] + offset,
+                                                     (t_off + team_start) % self.num_teams,
+                                                     None, range(self.t_rounds - 2))[0],
+                              time_start + self.t_duration[2] + offset, t_off)
+                              for offset in [tdelta for tdelta in offsets if tdelta >= timedelta(0)]
+                              for t_off in range(math.ceil(self.num_teams / 2)))
+                if current[:2] < (end, time_start):
+                    end, time_start, t_offset = current
+                    current = False
+            team_start = (team_start + t_offset) % self.num_teams
 
             self.t_slots += [((self.t_slots[-1][0][0] + mdelta*self.t_duration[0],
                                self.t_slots[-1][0][1] + mdelta*self.t_duration[0]),
