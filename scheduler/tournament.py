@@ -257,6 +257,7 @@ class Tournament:
             return self._team(t + team_next).next_avail(time_next, window, self.travel) - time_next
 
         consec = 0
+        last_nonnull, prev_nonnull = -1, -1
         tslots = []
         teams_left = len(rounds)*self.num_teams
         while teams_left > 0:
@@ -286,11 +287,22 @@ class Tournament:
 
             for match_size in next_matches:
                 timeslot = [(t + team_next) % self.num_teams for t in range(match_size)]
-                tslots += [((time_next, time_next + self.t_duration[rnd] / 2), rnd,
-                                  util.rpad(timeslot, match_sizes[-1], None))]
+                tslots += [[(time_next, time_next + self.t_duration[rnd] / 2), rnd,
+                                  util.rpad(timeslot, match_sizes[-1], None)]]
                 time_next += self.t_duration[rnd]
                 team_next, teams_left = team_next + match_size, teams_left - match_size
             consec += len(next_matches) if next_matches != [0] else 0
+
+            if next_matches != [0]:
+                prev_nonnull = len(tslots) - 2 if len(next_matches) > 1 else last_nonnull
+                last_nonnull = len(tslots) - 1
+            elif last_nonnull == 0 or (last_nonnull - prev_nonnull > 1):
+                window = (1 + self.t_stagger/2)*self.t_duration[tslots[last_nonnull][1]]
+                if all(self.teams[team].available(tslots[-1][0][0], window, self.travel)
+                       for team in tslots[last_nonnull][2] if team is not None):
+                    tslots[-1][1:], tslots[last_nonnull][1:] = tslots[last_nonnull][1:], tslots[-1][1:]
+                    last_nonnull = len(tslots) - 1
+                    consec = 1
 
         return time_next, tslots
 
