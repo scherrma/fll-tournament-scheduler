@@ -62,9 +62,11 @@ class Tournament:
                     self.j_break[0] < self.num_teams else timedelta(0))
             return min(util.round_to(rate, 2), 2*self.t_pairs)
 
+        #judging and table rounds need to keep pace to maintain an interlaced schedule
+        #this is worse between judge breaks; if those're too fast for the tables, slow down
         matches_req = math.ceil((3*self.j_sets*self.j_break[0] - self.num_teams) / run_rate())
         time_req = matches_req * self.t_duration[0] + self.j_duration[1] + 2*self.travel
-        time_ea = util.round_to(time_req / (self.j_break[0] - 1), timedelta(seconds=30))
+        time_ea = util.round_to(time_req / max(self.j_break[0] - 1, 1), timedelta(seconds=30))
         if timedelta(0) < time_ea - self.j_duration[0] <= timedelta(minutes=1):
             self.j_duration = (time_ea, self.j_duration[1])
 
@@ -205,7 +207,8 @@ class Tournament:
                 == math.ceil((len(self.j_slots) - self.j_calib - 1) / (self.j_break[0] - 1)):
                     self.j_break = (self.j_break[0] - 1, self.j_break[1])
 
-        breaks = range(self.j_calib, len(self.j_slots) - 1, self.j_break[0])
+        breaks = range(self.j_calib, len(self.j_slots) - int(self.j_break[0] > 1), self.j_break[0])
+        breaks = list(breaks)
         breaks = sorted(list({0, len(self.j_slots)} | set(breaks)))
         times = [[self.j_start + bool(i and self.j_calib)*self.travel
                   + max(i - self.j_calib, 0)*self.j_break[1] + j*self.j_duration[0]
