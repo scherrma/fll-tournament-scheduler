@@ -93,7 +93,7 @@ class Tournament:
                 best, current = current, False
                 (end, self.t_slots), team_start, time_start = best 
 
-        if self.t_rounds > 1: #determine run settings for afternoon table rounds
+        if self.t_rounds > 2: #determine run settings for afternoon table rounds
             for team in self.teams:
                 team.add_event(team.next_avail(self.lunch[0], self.lunch[2]),
                                self.lunch[2], -1, -1)
