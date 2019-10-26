@@ -28,12 +28,12 @@ def read_data(fpath):
         teams = team_sheet.loc[:, team_columns].values
         roster_cols = [list(team_sheet.columns).index(cat) + 1 for cat in team_columns]
         #any time we print full team data just print the number and look the other info up
-        team_info = [f"=index(indirect(\"'Team Information'!C{cat}\", false),"
+        team_info = [f"=trim(index(indirect(\"'Team Information'!C{cat}\", false), "
                       f"match(indirect(\"RC[-{offset + 1}]\", false), "
-                      f"indirect(\"'Team Information'!C{roster_cols[0]}\", false), 0))"
+                      f"indirect(\"'Team Information'!C{roster_cols[0]}\", false), 0)))"
                       for offset, cat in enumerate(roster_cols[:0:-1])]
         if divisions:
-            team_info[0] = '="Div: "&' + team_info[0][1:]
+            team_info[0] = '="Div: "& ' + team_info[0][1:]
     else:
         raise KeyError("Could not find columns 'Team Number' and 'Team' in 'Team Information'")
 
@@ -139,7 +139,7 @@ def export_judge_views(tment, workbook, time_fmt, team_info, event_names, rooms)
             sheets[i + 1].append(row[0] + (row[i + 1] if len(row) > 1 else []))
 
     #formatting - borders, cell merges, striped shading, etc
-    col_sizes = [1 + max(len(str(text)) for text in cat) for cat in
+    col_sizes = [1 + 1.15*max(len(str(text)) for text in cat) for cat in
                  zip(*[team.info(tment.divisions) for team in tment.teams])]
     col_sizes[1] += 5*tment.divisions
     for sheet in sheets:
@@ -203,7 +203,7 @@ def export_table_views(tment, workbook, time_fmt, team_info, rnd_abbrevs, rooms,
 
     #formatting - borders, cell merges, striped shading, etc
     col_wide = [1 + max(len(str(rnd)) for rnd in rnd_abbrevs)]
-    col_wide += [1 + max(len(str(text)) for text in cat) for cat in zip(*[team.info(tment.divisions)
+    col_wide += [1 + 1.15*max(len(str(text)) for text in cat) for cat in zip(*[team.info(tment.divisions)
                                                                           for team in tment.teams])]
     if tment.divisions:
         col_wide[2] += 4
@@ -247,7 +247,7 @@ def export_team_views(tment, workbook, time_fmt, team_info, event_names, rooms):
                            in sorted(team.events, key=lambda x: x[2])[2:]])
 
     #formatting - borders, cell merges, striped shading, etc
-    col_size = 1 + max(len(team.name) for team in tment.teams)
+    col_size = 1 + 1.15*max(len(team.name) for team in tment.teams)
     for sheet in (ws_chron, ws_event):
         basic_sheet_format(sheet)
         for col in sheet.columns:
@@ -258,7 +258,7 @@ def basic_sheet_format(sheet, start=0):
     """bolds the top row, stripes the rows, and sets column widths"""
     for col in sheet.columns:
         col[0].font = openpyxl.styles.Font(bold=True)
-        length = 2 + max((len(str(cell.value)) for cell in col[start:]
+        length = 1 + 1.15*max((len(str(cell.value)) for cell in col[start:]
                           if cell.value and str(cell.value)[0] != '='), default=0)
         sheet.column_dimensions[openpyxl.utils.get_column_letter(col[0].column)].width = length
     row_counter = 0
@@ -333,7 +333,7 @@ def generate_schedule():
 
     except (Exception, SystemExit) as excep:
         raise excep
-        #print(excep)
+        print(excep)
 
     #this is expected to run in console windows which close very quickly on windows
     if sys.platform in ["win32"]:

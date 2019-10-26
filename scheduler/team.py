@@ -6,8 +6,11 @@ class Team:
     def __init__(self, num, name, div=None):
         """Constructs a Team using the team's numeric id, name, and division (default=None)."""
         self.num = int(num)
-        self.name = name
-        self.div = div
+        self.name = str(name).strip()
+        try:
+            self.div = div.strip()
+        except AttributeError:
+            self.div = div
         self.events = []
 
     def __str__(self):
