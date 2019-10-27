@@ -5,7 +5,7 @@ from numpy import gcd
 import math
 import scheduler.util as util
 from scheduler.team import Team
-import scheduler.min_cost
+import scheduler.tassign as tassign
 
 class Tournament:
     """A class designed to create schedules for FLL qualifier tournaments."""
@@ -311,28 +311,44 @@ class Tournament:
 
     def assign_tables(self, assignment_passes=2):
         """Reorders the teams in self.t_slots to minimize table repetition for teams."""
-        prev_tables = [[0 for i in range(2*self.t_pairs)] for j in range(self.num_teams)]
-        def cost(order):
-            val = sum(prev_tables[team][table]**1.1 for table, team in enumerate(order)
-                      if team is not None)
-            val += sum(self.t_rounds + 1 for i in range(0, len(order) - 1, 2) if
-                       (order[i] is None) != (order[i + 1] is None))
-            return val
+        stripped_slots = [slot for _, _, slot in self.t_slots
+                          if any(team for team in slot if team is not None)]
+        num_tables = max(len(slot) for slot in stripped_slots)
+        times_used = [sum(1 for slot in stripped_slots if len(slot) > i) for i in range(num_tables)]
+        nones_used = num_tables*[0]
+        
+        def cost(slots):
+            table_use = [{} for i in range(num_tables)]
+            team_foes = {}
 
-        #the current approach only changes one match at a time; multiple passes fix bad early calls
-        for assign_pass in range(assignment_passes):
-            rotation = 0
-            for(times, rnd, teams) in filter(None, self.t_slots):
-                if assign_pass:
-                    for table, team in filter(lambda x: x[1] is not None, enumerate(teams)):
-                        prev_tables[team][table] -= 1
-                else:
-                    rotation += sum(2 for i in range(0, len(teams) - 1, 2)
-                                    if teams[i] is teams[i + 1] is None)
-                    rotation %= len(teams)
-                teams[:] = scheduler.min_cost.min_cost(teams[rotation:] + teams[:rotation], cost)
-                for table, team in filter(lambda x: x[1] is not None, enumerate(teams)):
-                    prev_tables[team][table] += 1
+            for slot in slots:
+                for tbl, team in enumerate(slot):
+                    table_use[tbl][team] = table_use[tbl].get(team, 0) + 1
+                    if team is not None:
+                        foe = tbl + 1 - 2*(tbl % 2)
+                        if foe < len(slot) - 1 and slot[foe] is not None:
+                            team_foes[team] = team_foes.get(team, []) + [slot[foe]]
+
+            table_use = [max(val - (nones_used[i] if team is None else 1), 0) / times_used[i]
+                         for i, tbl in enumerate(table_use) for team, val in tbl.items()]
+            team_table_dupes = sum(x**2 for x in table_use)
+            foe_dupes = sum(len(foes) - len(set(foes)) for foes in team_foes.values())
+            return 2*len(slots)*team_table_dupes + foe_dupes
+        
+        total_nones = sum(1 for slot in stripped_slots for team in slot if team is None)
+        if total_nones:
+            mincost = [[j + i*len(stripped_slots) for j in range(use_count)]
+                       for i, use_count in enumerate(times_used)]
+            nones_used = [total_nones * use_count // sum(times_used) for use_count in times_used]
+            nones_left = total_nones - sum(nones_used)
+            for idx in sorted(range(num_tables), key=lambda i: nones_used[i] / times_used[i])[:nones_left]:
+                nones_used[idx] += 1
+            for idx, nones in enumerate(nones_used):
+                mincost[idx][:nones] = nones*[None]
+            mincost = cost(list(zip(*mincost)))
+        
+        for idx, slot in enumerate(tassign.tassign(list(zip(*self.t_slots))[2], cost, mincost)):
+            self.t_slots[idx] = (self.t_slots[idx][0], self.t_slots[idx][1], slot)
 
         tbl_order = [2*j + k for i in range(2) for j in range(i, self.t_pairs, 2) for k in range(2)]
         for (times, rnd, teams) in filter(None, self.t_slots):
