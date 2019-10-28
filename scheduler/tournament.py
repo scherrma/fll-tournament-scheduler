@@ -61,7 +61,7 @@ class Tournament:
             rate /= self.j_duration[0] + (self.j_break[1] / self.j_break[0] if
                     self.j_break[0] < self.num_teams else timedelta(0))
             return min(util.round_to(rate, 2), 2*self.t_pairs)
-
+        
         #judging and table rounds need to keep pace to maintain an interlaced schedule
         #this is worse between judge breaks; if those're too fast for the tables, slow down
         matches_req = math.ceil((3*self.j_sets*self.j_break[0] - self.num_teams) / run_rate())
@@ -94,6 +94,10 @@ class Tournament:
                 (end, self.t_slots), team_start, time_start = best 
 
         if self.t_rounds > 2: #determine run settings for afternoon table rounds
+            for times, rnd, teams in self.t_slots:
+                for team in [team for team in teams if team is not None]:
+                    self.teams[team].add_event(times[0], self.t_duration[rnd] * (1 + self.t_stagger/2), -1, -1)
+
             for team in self.teams:
                 team.add_event(team.next_avail(self.lunch[0], self.lunch[2]),
                                self.lunch[2], -1, -1)
@@ -122,6 +126,7 @@ class Tournament:
                                self.t_slots[-1][0][1] + mdelta*self.t_duration[0]),
                               None, 2*self.t_pairs*[None]) for mdelta in
                              range(1, int((time_start - self.t_slots[-1][0][0]) / self.t_duration[0]))]
+                
  
             self.t_slots += self.schedule_matches(time_start, team_start, None, range(2, self.t_rounds))[1]
             for team in self.teams:

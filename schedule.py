@@ -299,9 +299,9 @@ def generate_schedule():
         error = False
         for team in tment.teams:
             t_error = False
-            if team.closest_events() < tment.travel:
+            if team.closest_events(ignore=[(0, 1)]) < tment.travel:
                 t_error = True
-                print(f'{team} has two events separated by only {team.closest_events()}')
+                print(f'{team} has two events separated by only {team.closest_events(ignore=[(0, 1)])}')
             if team.next_avail(tment.lunch[0], tment.lunch[2], timedelta(0)) > tment.lunch[1]:
                 t_error = True
                 print(f'{team} does not have {tment.lunch[2]} for lunch between',
