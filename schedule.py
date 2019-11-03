@@ -85,6 +85,7 @@ def read_data(fpath):
         t_names = [[str(tbl) for tbl in row if not pandas.isnull(tbl)] for row in t_names.values]
         rooms += [sum([tbls if len(tbls) > 1 else [tbls[0] + ' A', tbls[0] + ' B']
                        for tbls in t_names], [])]
+        rooms = [[str(loc) for loc in area] for area in rooms]
         t_duration = [timedelta(minutes=x) for x in
                       param_sheet.loc["t_durations"].dropna().values.tolist()[1:]]
 
@@ -299,7 +300,7 @@ def generate_schedule():
         error = False
         for team in tment.teams:
             t_error = False
-            if team.closest_events(ignore=[(0, 1)]) < tment.travel:
+            if team.closest_events(ignore=({0, 1})) < tment.travel:
                 t_error = True
                 print(f'{team} has two events separated by only {team.closest_events(ignore=[(0, 1)])}')
             if team.next_avail(tment.lunch[0], tment.lunch[2], timedelta(0)) > tment.lunch[1]:
@@ -332,7 +333,7 @@ def generate_schedule():
         print('Schedule saved: {}'.format(final_fout))
 
     except (Exception, SystemExit) as excep:
-        raise excep
+        #raise excep
         print(excep)
 
     #this is expected to run in console windows which close very quickly on windows

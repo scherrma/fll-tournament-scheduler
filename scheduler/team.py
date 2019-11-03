@@ -58,7 +58,9 @@ class Team:
                     self.available(sum(e[:2], travel), duration, travel))
 
     def closest_events(self, ignore=()):
-        """Returns the time between the two closest events scheduled for the team."""
-        ignore = [sorted(pair) for pair in ignore]
-        return min([self.events[i + 1][0] - self.events[i][0] - self.events[i][1]
-                    for i in range(len(self.events) - 1) if [i, i+1] not in ignore])
+        """Returns the time between the two closest events scheduled for the team.
+        
+        ignore - an iterable of sets; timespans between events with IDs in a set will be ignored"""
+        return min((ev2[0] - ev1[0] - ev1[1] for ev1, ev2 in zip(self.events, self.events[1:])
+                    if not any({ev1[2], ev2[2]}.issubset(group) for group in ignore)),
+                   default=timedelta.max)
